@@ -1,0 +1,5 @@
+{
+  "name": "GlicoFlow",
+  "description": "A modern glucose tracking application with user authentication and secure data isolation.",
+  "requestFramePermissions": []
+}
