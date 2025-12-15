@@ -1,7 +1,7 @@
 import { GlucoseRecord } from '../types';
 
 // TODO: Altere esta URL para o endereço do seu backend no Render
-const API_BASE_URL = 'http://localhost:3000/api'; 
+const API_BASE_URL = 'https://glicoflow-backend.onrender.com'; 
 
 const getHeaders = () => {
   const token = localStorage.getItem('glicoflow_token');

@@ -2,7 +2,7 @@ import { User, AuthResponse } from '../types';
 
 // TODO: Altere esta URL para o endereço do seu backend no Render
 // Exemplo: 'https://seu-app-glicoflow.onrender.com/api'
-const API_BASE_URL = 'http://localhost:3000/api'; 
+const API_BASE_URL = 'https://glicoflow-backend.onrender.com'; 
 
 // Helper para obter cabeçalhos com o token
 const getHeaders = () => {
