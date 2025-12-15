@@ -1,7 +1,15 @@
 import { GlucoseRecord } from '../types';
-import * as MockDB from './mockDatabase';
 
-// In a real Render deployment, these functions would fetch() to your NodeJS API
+// TODO: Altere esta URL para o endereço do seu backend no Render
+const API_BASE_URL = 'http://localhost:3000/api'; 
+
+const getHeaders = () => {
+  const token = localStorage.getItem('glicoflow_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
 
 export const addGlucoseRecord = async (
   userId: string,
@@ -9,19 +17,17 @@ export const addGlucoseRecord = async (
   date: string,
   time: string
 ): Promise<GlucoseRecord> => {
-  await MockDB.delay(500); // Simulate API latency
+  const response = await fetch(`${API_BASE_URL}/records`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ userId, value, date, time }),
+  });
 
-  const newRecord: GlucoseRecord = {
-    id: crypto.randomUUID(),
-    userId,
-    value,
-    date,
-    time,
-    createdAt: Date.now(),
-  };
+  if (!response.ok) {
+    throw new Error('Falha ao salvar registro');
+  }
 
-  MockDB.saveRecord(newRecord);
-  return newRecord;
+  return response.json();
 };
 
 export const getUserHistory = async (
@@ -29,24 +35,48 @@ export const getUserHistory = async (
   startDate?: string,
   endDate?: string
 ): Promise<GlucoseRecord[]> => {
-  await MockDB.delay(600);
-  
-  let records = MockDB.getRecordsByUser(userId);
+  const params = new URLSearchParams({ userId });
+  if (startDate) params.append('startDate', startDate);
+  if (endDate) params.append('endDate', endDate);
 
-  if (startDate && endDate) {
-    records = records.filter(r => r.date >= startDate && r.date <= endDate);
+  try {
+    const response = await fetch(`${API_BASE_URL}/records?${params.toString()}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      console.error("Falha ao buscar histórico");
+      return [];
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Erro de conexão", error);
+    return [];
   }
-
-  return records;
 };
 
 export const getStats = async (userId: string) => {
+  // Busca o histórico completo ou parcial para calcular estatísticas
+  // O ideal seria um endpoint dedicado /stats, mas calcularemos no front por enquanto
+  // para manter compatibilidade com a estrutura anterior
   const records = await getUserHistory(userId);
-  if (records.length === 0) return { avg: 0, count: 0, last: 0 };
+  
+  if (!records || records.length === 0) return { avg: 0, count: 0, last: 0 };
 
   const total = records.reduce((acc, curr) => acc + curr.value, 0);
   const avg = Math.round(total / records.length);
-  const last = records[0].value; // Records are sorted desc by default in mock
+  
+  // Ordena por data/hora decrescente para pegar o último registro
+  // Assume que o backend retorna datas no formato YYYY-MM-DD
+  records.sort((a, b) => {
+    const dateA = new Date(`${a.date}T${a.time}`);
+    const dateB = new Date(`${b.date}T${b.time}`);
+    return dateB.getTime() - dateA.getTime();
+  });
+
+  const last = records[0].value;
 
   return { avg, count: records.length, last };
 };

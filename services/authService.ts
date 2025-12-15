@@ -1,61 +1,103 @@
 import { User, AuthResponse } from '../types';
-import * as MockDB from './mockDatabase';
 
-// In a real Render deployment, replace these function bodies with fetch() calls to your backend
+// TODO: Altere esta URL para o endereço do seu backend no Render
+// Exemplo: 'https://seu-app-glicoflow.onrender.com/api'
+const API_BASE_URL = 'http://localhost:3000/api'; 
+
+// Helper para obter cabeçalhos com o token
+const getHeaders = () => {
+  const token = localStorage.getItem('glicoflow_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
 
 export const registerUser = async (username: string, email: string, password: string): Promise<AuthResponse> => {
-  await MockDB.delay(800);
-  
-  // Check existence
-  if (MockDB.findUserByUsername(username)) {
-    return { success: false, message: 'Usuário já existe' };
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok && data.token) {
+      localStorage.setItem('glicoflow_token', data.token);
+    } else if (!response.ok) {
+      return { success: false, message: data.message || 'Erro ao cadastrar' };
+    }
+    
+    return data;
+  } catch (error) {
+    console.error(error);
+    return { success: false, message: 'Erro de conexão com o servidor' };
   }
-
-  const newUser: User = {
-    id: crypto.randomUUID(),
-    username,
-    email
-  };
-
-  MockDB.saveUser({ ...newUser, password }); // In real app, never save plain password!
-  
-  return { success: true, user: newUser };
 };
 
 export const loginUser = async (username: string, password: string): Promise<AuthResponse> => {
-  await MockDB.delay(800);
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
 
-  const found = MockDB.getUsers().find(u => u.username.toLowerCase() === username.toLowerCase());
+    const data = await response.json();
 
-  if (found && found.password === password) {
-    // Return user without password
-    const { password: _, ...cleanUser } = found;
-    return { success: true, user: cleanUser as User };
+    if (response.ok && data.token) {
+      localStorage.setItem('glicoflow_token', data.token);
+      return { success: true, user: data.user, token: data.token };
+    }
+
+    return { success: false, message: data.message || 'Usuário ou senha inválidos' };
+  } catch (error) {
+    console.error(error);
+    return { success: false, message: 'Erro de conexão ao tentar entrar.' };
   }
-
-  return { success: false, message: 'Usuário ou senha inválidos' };
 };
 
 export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
-  await MockDB.delay(300); // Quick check
-  return !MockDB.findUserByUsername(username);
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/check-username`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data.available;
+  } catch (error) {
+    console.error("Check username failed", error);
+    return false;
+  }
 };
 
 export const checkAutoLogin = async (): Promise<User | null> => {
-  // Check local storage for session token/id
-  const sessionId = localStorage.getItem('glicoflow_session');
-  if (!sessionId) return null;
+  const token = localStorage.getItem('glicoflow_token');
+  if (!token) return null;
 
-  const users = MockDB.getUsers();
-  const found = users.find(u => u.id === sessionId);
-  
-  if (found) {
-    const { password: _, ...cleanUser } = found;
-    return cleanUser as User;
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.user;
+    } else {
+      // Token inválido ou expirado
+      localStorage.removeItem('glicoflow_token');
+      return null;
+    }
+  } catch (error) {
+    return null;
   }
-  return null;
 };
 
 export const logoutUser = () => {
-  localStorage.removeItem('glicoflow_session');
+  localStorage.removeItem('glicoflow_token');
 };

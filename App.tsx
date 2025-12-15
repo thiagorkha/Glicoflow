@@ -29,9 +29,7 @@ function App() {
   const handleLoginSuccess = (userData: User, remember: boolean) => {
     setUser(userData);
     setCurrentView(ViewState.HOME);
-    if (remember) {
-      localStorage.setItem('glicoflow_session', userData.id);
-    }
+    // Token persistence is now handled inside authService
   };
 
   const handleLogout = () => {
