@@ -1,10 +1,12 @@
-// server.js
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const { Pool } = require('pg');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import pg from 'pg';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
+
+const { Pool } = pg;
 
 const app = express();
 app.use(cors());
@@ -40,7 +42,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Hash da senha
     const hashedPassword = await bcrypt.hash(password, 10);
-    const id = require('crypto').randomUUID();
+    const id = randomUUID();
 
     // Criar usuário
     const newUser = await pool.query(
@@ -96,7 +98,7 @@ app.post('/api/auth/check-username', async (req, res) => {
 app.post('/api/records', authenticateToken, async (req, res) => {
   const { value, date, time } = req.body;
   const userId = req.user.id;
-  const id = require('crypto').randomUUID();
+  const id = randomUUID();
   
   try {
     const result = await pool.query(
