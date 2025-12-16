@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Robust PG import for ESM
 const { Pool } = pg;
 
 const app = express();
@@ -28,13 +29,13 @@ if (!process.env.DATABASE_URL) {
 // Conexão com Banco de Dados
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Necessário para Render
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false 
 });
 
 // Testar conexão na inicialização
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('Erro ao conectar no Banco de Dados:', err.message);
+    console.error('Erro ao conectar no Banco de Dados:', err);
   } else {
     console.log('Conexão com Banco de Dados estabelecida com sucesso.');
     release();
@@ -44,8 +45,7 @@ pool.connect((err, client, release) => {
 // Inicialização do Banco de Dados (Criação de Tabelas)
 const initDb = async () => {
   try {
-    // Nota: Removemos o DEFAULT complexo para evitar conflitos se a tabela já existir com schema antigo.
-    // O valor de created_at será passado via aplicação.
+    // 1. Criar tabelas se não existirem
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY,
@@ -54,7 +54,9 @@ const initDb = async () => {
         password_hash VARCHAR(255) NOT NULL,
         created_at BIGINT
       );
-      
+    `);
+    
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS glucose_records (
         id UUID PRIMARY KEY,
         user_id UUID REFERENCES users(id),
@@ -64,9 +66,18 @@ const initDb = async () => {
         created_at BIGINT NOT NULL
       );
     `);
-    console.log('Tabelas verificadas/criadas com sucesso!');
+
+    // 2. Migração de segurança: Garantir que created_at é BIGINT (caso tabela tenha sido criada errada antes)
+    try {
+      await pool.query('ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT');
+      console.log('Schema da tabela users verificado.');
+    } catch (e) {
+      console.log('Nota sobre schema users:', e.message);
+    }
+
+    console.log('Banco de dados inicializado corretamente.');
   } catch (err) {
-    console.error('Erro ao inicializar tabelas:', err);
+    console.error('Erro fatal ao inicializar tabelas:', err);
   }
 };
 
@@ -87,37 +98,41 @@ const authenticateToken = (req, res, next) => {
 
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
-  console.log(`Tentativa de cadastro: ${username} (${email})`);
+  console.log(`API: Tentativa de cadastro para ${username}`);
+
+  if (!username || !email || !password) {
+    return res.status(400).json({ message: 'Todos os campos são obrigatórios' });
+  }
 
   try {
     // Verificar se usuário existe
     const userCheck = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
     if (userCheck.rows.length > 0) {
-      return res.status(400).json({ message: 'Usuário já existe' });
+      return res.status(400).json({ message: 'Este nome de usuário já está em uso.' });
     }
 
     // Hash da senha
     const hashedPassword = await bcrypt.hash(password, 10);
     const id = randomUUID();
-    const createdAt = Date.now(); // Gera timestamp em milissegundos (BIGINT compatível)
+    const createdAt = Date.now(); 
 
-    // Criar usuário passando created_at explicitamente para evitar erros de Default Value antigo no banco
+    // Criar usuário
     const newUser = await pool.query(
       'INSERT INTO users (id, username, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email',
       [id, username, email, hashedPassword, createdAt]
     );
 
-    console.log(`Usuário cadastrado com sucesso: ${username}`);
+    console.log(`API: Usuário cadastrado ID: ${newUser.rows[0].id}`);
 
     // Gerar Token
     const token = jwt.sign({ id: newUser.rows[0].id, username }, process.env.JWT_SECRET);
     res.json({ success: true, user: newUser.rows[0], token });
   } catch (err) {
-    console.error("Erro detalhado no registro:", err);
-    // Retorna a mensagem real do erro para facilitar o debug no frontend
+    console.error("API: Erro Crítico no Registro:", err);
+    // Retorna JSON explícito com o erro
     res.status(500).json({ 
-      message: err.message || 'Erro interno ao cadastrar usuário',
-      details: err.detail // Postgres detalha violações aqui
+      message: `Erro no banco de dados: ${err.message}`, 
+      details: err.detail 
     });
   }
 });
@@ -138,7 +153,7 @@ app.post('/api/auth/login', async (req, res) => {
     delete user.password_hash;
     res.json({ success: true, user, token });
   } catch (err) {
-    console.error("Erro no login:", err);
+    console.error("API: Erro no Login:", err);
     res.status(500).json({ message: err.message || 'Erro interno ao realizar login' });
   }
 });
@@ -157,12 +172,13 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 app.post('/api/auth/check-username', async (req, res) => {
   const { username } = req.body;
   try {
+    // Verifica conexão antes
     const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
     res.json({ available: result.rows.length === 0 });
   } catch (err) {
-    console.error("Erro check-username:", err.message);
-    // Retorna true para não bloquear a UI em caso de erro de DB
-    res.status(500).json({ message: 'Erro ao verificar usuário' });
+    console.error("API: Erro check-username:", err.message);
+    // Retorna erro 500 para que o frontend possa decidir o que fazer (ignorar ou mostrar erro)
+    res.status(500).json({ message: 'Erro de conexão com o banco' });
   }
 });
 
@@ -206,6 +222,11 @@ app.get('/api/records', authenticateToken, async (req, res) => {
     console.error(err);
     res.status(500).json({ message: err.message });
   }
+});
+
+// Endpoint de debug para verificar se a API está de pé
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
 });
 
 // All other GET requests not handled before will return the React app

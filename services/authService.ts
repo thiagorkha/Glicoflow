@@ -19,7 +19,8 @@ const parseJSON = async (response: Response) => {
     return text ? JSON.parse(text) : {};
   } catch (e) {
     console.error('Failed to parse JSON response:', text);
-    throw new Error('Resposta inválida do servidor');
+    // Retornar um objeto com a mensagem de erro do texto cru, se houver
+    return { message: `Erro do servidor: ${text.substring(0, 50)}...` };
   }
 };
 
@@ -35,15 +36,16 @@ export const registerUser = async (username: string, email: string, password: st
     
     if (response.ok && data.token) {
       localStorage.setItem('glicoflow_token', data.token);
-    } else if (!response.ok) {
-      // Prioriza a mensagem de erro vinda do backend
-      return { success: false, message: data.message || data.error || 'Erro ao cadastrar' };
+      return data; // Retorna o sucesso
+    } else {
+      // Retorna o erro capturado
+      const errorMsg = data.message || data.error || `Erro desconhecido (${response.status})`;
+      console.error("Register error:", errorMsg);
+      return { success: false, message: errorMsg };
     }
-    
-    return data;
   } catch (error) {
-    console.error(error);
-    return { success: false, message: 'Erro de conexão com o servidor' };
+    console.error("Network/System error:", error);
+    return { success: false, message: 'Não foi possível conectar ao servidor.' };
   }
 };
 
