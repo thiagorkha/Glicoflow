@@ -12,6 +12,7 @@ const getHeaders = () => {
 
 const parseJSON = async (response: Response) => {
   const text = await response.text();
+  console.log(`[AuthService] Raw Response (${response.status}):`, text); // Debug essencial
   try {
     return text ? JSON.parse(text) : {};
   } catch (e) {
@@ -37,7 +38,6 @@ export const registerUser = async (username: string, email: string, password: st
       console.warn("Register Failed. Status:", response.status);
       console.warn("Response Body:", data);
       
-      // Inclui o corpo da resposta no erro para debug visual
       const jsonStr = JSON.stringify(data);
       const errorMsg = data.message || data.error || `Erro (${response.status}): ${jsonStr}`;
       return { success: false, message: errorMsg };

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import pg from 'pg'; // Importação padrão ESM
+import pkg from 'pg'; // CORREÇÃO: Importação compatível com ESM
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
@@ -11,8 +11,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Extrair Pool do pacote pg
-const { Pool } = pg;
+// CORREÇÃO: Extrair Pool do pacote default
+const { Pool } = pkg;
 
 const app = express();
 app.use(cors());
@@ -27,12 +27,10 @@ if (!process.env.DATABASE_URL) {
 }
 
 // Lógica do JWT
-// O código tenta ler do .env (Render). Se não achar, usa o fallback.
 const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-fallback-12345';
 console.log(`Configuração: JWT_SECRET está usando ${process.env.JWT_SECRET ? 'variável de ambiente' : 'valor de fallback'}.`);
 
 // Configuração SSL inteligente
-// Se a URL contém 'render.com' (banco em nuvem), forçamos SSL mesmo localmente
 const needsSSL = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com');
 const sslConfig = (process.env.NODE_ENV === 'production' || needsSSL) 
   ? { rejectUnauthorized: false } 
@@ -129,23 +127,26 @@ app.post('/api/auth/register', async (req, res) => {
     const newUser = newUserResult.rows[0];
     
     // Gerar Token
+    console.log("Gerando token...");
     const token = jwt.sign({ id: newUser.id, username: newUser.username }, JWT_SECRET);
     
-    console.log(`API Register: Sucesso. Enviando resposta manual.`);
+    if (!token) {
+        throw new Error("Falha crítica: Token gerado é nulo.");
+    }
 
-    // RESPOSTA MANUAL: Para evitar erros de serialização do res.json
-    const responseData = { 
+    const payload = { 
       success: true, 
       user: {
         id: newUser.id,
         username: newUser.username,
         email: newUser.email
       }, 
-      token: token 
+      token: String(token) 
     };
 
-    res.setHeader('Content-Type', 'application/json');
-    res.status(200).send(JSON.stringify(responseData));
+    console.log(`API Register: Sucesso. Payload a enviar:`, JSON.stringify(payload));
+
+    res.json(payload);
 
   } catch (err) {
     console.error("API Register ERROR:", err);
@@ -174,9 +175,7 @@ app.post('/api/auth/login', async (req, res) => {
       email: user.email
     };
 
-    // Resposta Manual também no login
-    res.setHeader('Content-Type', 'application/json');
-    res.status(200).send(JSON.stringify({ success: true, user: userResponse, token }));
+    res.json({ success: true, user: userResponse, token });
   } catch (err) {
     console.error("API Login ERROR:", err);
     res.status(500).json({ message: err.message || 'Erro interno ao realizar login' });
@@ -201,7 +200,6 @@ app.post('/api/auth/check-username', async (req, res) => {
     res.json({ available: result.rows.length === 0 });
   } catch (err) {
     console.error("API check-username ERROR:", err.message);
-    // Não falhar o app se o check falhar
     res.status(200).json({ available: true });
   }
 });
