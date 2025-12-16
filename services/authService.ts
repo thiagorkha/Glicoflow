@@ -36,7 +36,8 @@ export const registerUser = async (username: string, email: string, password: st
     if (response.ok && data.token) {
       localStorage.setItem('glicoflow_token', data.token);
     } else if (!response.ok) {
-      return { success: false, message: data.message || 'Erro ao cadastrar' };
+      // Prioriza a mensagem de erro vinda do backend
+      return { success: false, message: data.message || data.error || 'Erro ao cadastrar' };
     }
     
     return data;
@@ -61,7 +62,7 @@ export const loginUser = async (username: string, password: string): Promise<Aut
       return { success: true, user: data.user, token: data.token };
     }
 
-    return { success: false, message: data.message || 'Usuário ou senha inválidos' };
+    return { success: false, message: data.message || data.error || 'Usuário ou senha inválidos' };
   } catch (error) {
     console.error(error);
     return { success: false, message: 'Erro de conexão ao tentar entrar.' };

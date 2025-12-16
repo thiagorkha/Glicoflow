@@ -29,13 +29,14 @@ const pool = new Pool({
 // Inicialização do Banco de Dados (Criação de Tabelas)
 const initDb = async () => {
   try {
+    // Nota: O CAST ou ::BIGINT é essencial para evitar erro de tipo na inserção
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
         email VARCHAR(255) NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)
+        created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
       );
       
       CREATE TABLE IF NOT EXISTS glucose_records (
@@ -80,6 +81,7 @@ app.post('/api/auth/register', async (req, res) => {
     const id = randomUUID();
 
     // Criar usuário
+    // A coluna created_at será preenchida automaticamente pelo DEFAULT corrigido
     const newUser = await pool.query(
       'INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, username, email',
       [id, username, email, hashedPassword]
@@ -89,8 +91,9 @@ app.post('/api/auth/register', async (req, res) => {
     const token = jwt.sign({ id: newUser.rows[0].id, username }, process.env.JWT_SECRET);
     res.json({ success: true, user: newUser.rows[0], token });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erro interno ao cadastrar usuário' });
+    console.error("Erro no registro:", err);
+    // Retorna a mensagem real do erro para facilitar o debug no frontend
+    res.status(500).json({ message: err.message || 'Erro interno ao cadastrar usuário' });
   }
 });
 
@@ -110,8 +113,8 @@ app.post('/api/auth/login', async (req, res) => {
     delete user.password_hash;
     res.json({ success: true, user, token });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erro interno ao realizar login' });
+    console.error("Erro no login:", err);
+    res.status(500).json({ message: err.message || 'Erro interno ao realizar login' });
   }
 });
 
@@ -134,7 +137,7 @@ app.post('/api/auth/check-username', async (req, res) => {
   } catch (err) {
     console.error(err);
     // Retorna true para não bloquear a UI em caso de erro de DB, mas loga o erro
-    res.status(500).json({ error: 'Erro ao verificar usuário' });
+    res.status(500).json({ message: 'Erro ao verificar usuário' });
   }
 });
 
@@ -153,7 +156,7 @@ app.post('/api/records', authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
@@ -176,7 +179,7 @@ app.get('/api/records', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ message: err.message });
   }
 });
 
