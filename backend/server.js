@@ -5,12 +5,21 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const { Pool } = pg;
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Serve static files from the React frontend app (dist folder)
+// Assumes server.js is in /backend and dist is in /dist (root)
+app.use(express.static(path.join(__dirname, '../dist')));
 
 // Conexão com Banco de Dados
 const pool = new Pool({
@@ -131,6 +140,11 @@ app.get('/api/records', authenticateToken, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// All other GET requests not handled before will return the React app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
