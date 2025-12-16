@@ -34,16 +34,17 @@ export const registerUser = async (username: string, email: string, password: st
       localStorage.setItem('glicoflow_token', data.token);
       return data; 
     } else {
-      // Debug intenso: Vamos ver o que chegou se deu erro ou se o token sumiu
       console.warn("Register Failed. Status:", response.status);
       console.warn("Response Body:", data);
       
-      const errorMsg = data.message || data.error || `Erro desconhecido (Status: ${response.status} - Sem token na resposta)`;
+      // Inclui o corpo da resposta no erro para debug visual
+      const jsonStr = JSON.stringify(data);
+      const errorMsg = data.message || data.error || `Erro (${response.status}): ${jsonStr}`;
       return { success: false, message: errorMsg };
     }
   } catch (error) {
     console.error("Network/System error:", error);
-    return { success: false, message: 'Não foi possível conectar ao servidor.' };
+    return { success: false, message: 'Não foi possível conectar ao servidor (Erro de Rede).' };
   }
 };
 

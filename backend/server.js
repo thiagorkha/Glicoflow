@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import pg from 'pg';
+import pkg from 'pg'; // Import default package
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
@@ -11,11 +11,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Robust PG import for ESM
-const { Pool } = pg;
+// Destructure Pool from the default export to handle ESM/CJS interop safely
+const { Pool } = pkg;
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Allow all origins by default for troubleshooting
 app.use(express.json());
 
 // Serve static files from the React frontend app (dist folder)
@@ -26,11 +26,8 @@ if (!process.env.DATABASE_URL) {
   console.error("ERRO CRÍTICO: DATABASE_URL não está definida nas variáveis de ambiente.");
 }
 
-// Fallback para JWT_SECRET para evitar erros em dev/testes se esquecerem de configurar
-const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-dev-fallback-12345';
-if (!process.env.JWT_SECRET) {
-  console.warn("AVISO: JWT_SECRET não definido. Usando segredo de fallback (inseguro para produção).");
-}
+// Fallback para JWT_SECRET
+const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-fallback-12345';
 
 // Conexão com Banco de Dados
 const pool = new Pool({
@@ -38,17 +35,15 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false 
 });
 
-// Testar conexão na inicialização
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('Erro ao conectar no Banco de Dados:', err);
+    console.error('Erro ao conectar no Banco de Dados:', err.message);
   } else {
     console.log('Conexão com Banco de Dados estabelecida com sucesso.');
     release();
   }
 });
 
-// Inicialização do Banco de Dados
 const initDb = async () => {
   try {
     await pool.query(`
@@ -72,11 +67,11 @@ const initDb = async () => {
       );
     `);
 
-    // Migração de segurança para created_at
+    // Migração de segurança
     try {
       await pool.query('ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT');
     } catch (e) {
-      // Ignorar erro se já estiver correto ou tabela vazia
+      // Ignorar
     }
 
     console.log('Banco de dados pronto.');
@@ -85,7 +80,6 @@ const initDb = async () => {
   }
 };
 
-// Middleware de Autenticação
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -102,25 +96,24 @@ const authenticateToken = (req, res, next) => {
 
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
-  console.log(`API Register: Iniciando cadastro para ${username}`);
+  console.log(`API Register: Iniciando para ${username}`);
 
   if (!username || !email || !password) {
     return res.status(400).json({ message: 'Todos os campos são obrigatórios' });
   }
 
   try {
-    // Verificar se usuário existe
+    // Verificar duplicidade
     const userCheck = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
     if (userCheck.rows.length > 0) {
       return res.status(400).json({ message: 'Este nome de usuário já está em uso.' });
     }
 
-    // Hash da senha
+    // Inserir
     const hashedPassword = await bcrypt.hash(password, 10);
     const id = randomUUID();
     const createdAt = Date.now(); 
 
-    // Criar usuário
     const newUserResult = await pool.query(
       'INSERT INTO users (id, username, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email',
       [id, username, email, hashedPassword, createdAt]
@@ -128,27 +121,30 @@ app.post('/api/auth/register', async (req, res) => {
 
     const newUser = newUserResult.rows[0];
     
-    if (!newUser) {
-      throw new Error("Falha ao recuperar usuário recém-criado.");
-    }
+    if (!newUser) throw new Error("Falha ao recuperar dados do usuário inserido");
 
-    console.log(`API Register: Usuário inserido no DB. Gerando token...`);
-
-    // Gerar Token
+    // Token
+    console.log("API Register: Gerando token...");
     const token = jwt.sign({ id: newUser.id, username: newUser.username }, JWT_SECRET);
-
-    if (!token) {
-      throw new Error("Falha ao gerar token JWT.");
-    }
-
-    const responsePayload = { success: true, user: newUser, token };
-    console.log("API Register: Enviando resposta de sucesso.");
     
-    res.json(responsePayload);
+    if (!token) throw new Error("Token gerado é vazio/nulo");
+    
+    console.log(`API Register: Token gerado (len: ${token.length}). Enviando JSON...`);
+
+    // Enviar explicitamente
+    return res.status(200).json({ 
+      success: true, 
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        email: newUser.email
+      }, 
+      token: token 
+    });
 
   } catch (err) {
     console.error("API Register ERROR:", err);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       message: `Erro interno: ${err.message}`, 
       details: err.detail 
     });
@@ -167,8 +163,14 @@ app.post('/api/auth/login', async (req, res) => {
 
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
     
-    delete user.password_hash;
-    res.json({ success: true, user, token });
+    // Simplificar objeto user
+    const userResponse = {
+      id: user.id,
+      username: user.username,
+      email: user.email
+    };
+
+    res.json({ success: true, user: userResponse, token });
   } catch (err) {
     console.error("API Login ERROR:", err);
     res.status(500).json({ message: err.message || 'Erro interno ao realizar login' });
@@ -197,8 +199,6 @@ app.post('/api/auth/check-username', async (req, res) => {
   }
 });
 
-// --- ROTAS DE DADOS (Glicemia) ---
-
 app.post('/api/records', authenticateToken, async (req, res) => {
   const { value, date, time } = req.body;
   const userId = req.user.id;
@@ -219,7 +219,6 @@ app.post('/api/records', authenticateToken, async (req, res) => {
 app.get('/api/records', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const { startDate, endDate } = req.query;
-  
   let query = 'SELECT * FROM glucose_records WHERE user_id = $1';
   const params = [userId];
 
