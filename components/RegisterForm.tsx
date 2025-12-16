@@ -30,7 +30,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onNavigate }) => {
         const available = await checkUsernameAvailability(username);
         setUsernameAvailable(available);
       } catch (e) {
-        // ignore
+        // Se falhar, permitimos continuar para não travar
+        setUsernameAvailable(true);
       } finally {
         setIsCheckingUser(false);
       }
@@ -42,7 +43,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onNavigate }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!usernameAvailable) return;
+    // Permite submissão se user for nulo (não checado) ou true (disponível)
+    if (usernameAvailable === false) return;
     
     setLoading(true);
     setError('');
@@ -143,7 +145,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onNavigate }) => {
 
         <button
           type="submit"
-          disabled={loading || !usernameAvailable || username.length < 3 || password.length < 6}
+          disabled={loading || usernameAvailable === false || username.length < 3 || password.length < 6 || !email}
           className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-green-200 flex items-center justify-center transition transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Cadastrar e Entrar'}

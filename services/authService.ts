@@ -76,12 +76,17 @@ export const checkUsernameAvailability = async (username: string): Promise<boole
       body: JSON.stringify({ username }),
     });
     
-    if (!response.ok) return false;
+    // Se der erro no servidor (500, timeout, etc), retornamos true para permitir 
+    // que o usuário tente o cadastro e receba o erro real do endpoint de registro,
+    // em vez de ficar com a UI bloqueada.
+    if (!response.ok) return true;
+    
     const data = await parseJSON(response);
     return data.available;
   } catch (error) {
     console.error("Check username failed", error);
-    return false;
+    // Em caso de erro de rede, assumimos disponível para não travar a UI
+    return true;
   }
 };
 
