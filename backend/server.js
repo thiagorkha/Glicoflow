@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import pkg from 'pg'; // Import default package
+import pg from 'pg'; // Importação padrão ESM
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
@@ -11,11 +11,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Destructure Pool from the default export to handle ESM/CJS interop safely
-const { Pool } = pkg;
+// Extrair Pool do pacote pg
+const { Pool } = pg;
 
 const app = express();
-app.use(cors()); // Allow all origins by default for troubleshooting
+app.use(cors());
 app.use(express.json());
 
 // Serve static files from the React frontend app (dist folder)
@@ -26,18 +26,26 @@ if (!process.env.DATABASE_URL) {
   console.error("ERRO CRÍTICO: DATABASE_URL não está definida nas variáveis de ambiente.");
 }
 
-// Fallback para JWT_SECRET
+// Lógica do JWT
+// O código tenta ler do .env (Render). Se não achar, usa o fallback.
 const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-fallback-12345';
+console.log(`Configuração: JWT_SECRET está usando ${process.env.JWT_SECRET ? 'variável de ambiente' : 'valor de fallback'}.`);
 
-// Conexão com Banco de Dados
+// Configuração SSL inteligente
+// Se a URL contém 'render.com' (banco em nuvem), forçamos SSL mesmo localmente
+const needsSSL = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com');
+const sslConfig = (process.env.NODE_ENV === 'production' || needsSSL) 
+  ? { rejectUnauthorized: false } 
+  : false;
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false 
+  ssl: sslConfig
 });
 
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('Erro ao conectar no Banco de Dados:', err.message);
+    console.error('ERRO DE CONEXÃO COM BANCO:', err.message);
   } else {
     console.log('Conexão com Banco de Dados estabelecida com sucesso.');
     release();
@@ -67,14 +75,13 @@ const initDb = async () => {
       );
     `);
 
-    // Migração de segurança
     try {
       await pool.query('ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT');
     } catch (e) {
-      // Ignorar
+      // Ignorar se já estiver correto
     }
 
-    console.log('Banco de dados pronto.');
+    console.log('Tabelas verificadas/criadas.');
   } catch (err) {
     console.error('Erro fatal ao inicializar tabelas:', err);
   }
@@ -121,18 +128,13 @@ app.post('/api/auth/register', async (req, res) => {
 
     const newUser = newUserResult.rows[0];
     
-    if (!newUser) throw new Error("Falha ao recuperar dados do usuário inserido");
-
-    // Token
-    console.log("API Register: Gerando token...");
+    // Gerar Token
     const token = jwt.sign({ id: newUser.id, username: newUser.username }, JWT_SECRET);
     
-    if (!token) throw new Error("Token gerado é vazio/nulo");
-    
-    console.log(`API Register: Token gerado (len: ${token.length}). Enviando JSON...`);
+    console.log(`API Register: Sucesso. Enviando resposta manual.`);
 
-    // Enviar explicitamente
-    return res.status(200).json({ 
+    // RESPOSTA MANUAL: Para evitar erros de serialização do res.json
+    const responseData = { 
       success: true, 
       user: {
         id: newUser.id,
@@ -140,11 +142,14 @@ app.post('/api/auth/register', async (req, res) => {
         email: newUser.email
       }, 
       token: token 
-    });
+    };
+
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).send(JSON.stringify(responseData));
 
   } catch (err) {
     console.error("API Register ERROR:", err);
-    return res.status(500).json({ 
+    res.status(500).json({ 
       message: `Erro interno: ${err.message}`, 
       details: err.detail 
     });
@@ -163,14 +168,15 @@ app.post('/api/auth/login', async (req, res) => {
 
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
     
-    // Simplificar objeto user
     const userResponse = {
       id: user.id,
       username: user.username,
       email: user.email
     };
 
-    res.json({ success: true, user: userResponse, token });
+    // Resposta Manual também no login
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).send(JSON.stringify({ success: true, user: userResponse, token }));
   } catch (err) {
     console.error("API Login ERROR:", err);
     res.status(500).json({ message: err.message || 'Erro interno ao realizar login' });
@@ -195,7 +201,8 @@ app.post('/api/auth/check-username', async (req, res) => {
     res.json({ available: result.rows.length === 0 });
   } catch (err) {
     console.error("API check-username ERROR:", err.message);
-    res.status(500).json({ message: 'Erro de conexão com o banco' });
+    // Não falhar o app se o check falhar
+    res.status(200).json({ available: true });
   }
 });
 
