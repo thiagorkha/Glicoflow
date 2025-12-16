@@ -21,9 +21,15 @@ app.use(express.json());
 // Serve static files from the React frontend app (dist folder)
 app.use(express.static(path.join(__dirname, '../dist')));
 
-// Verificação de segurança da URL do banco
+// Configurações de Ambiente
 if (!process.env.DATABASE_URL) {
   console.error("ERRO CRÍTICO: DATABASE_URL não está definida nas variáveis de ambiente.");
+}
+
+// Fallback para JWT_SECRET para evitar erros em dev/testes se esquecerem de configurar
+const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-dev-fallback-12345';
+if (!process.env.JWT_SECRET) {
+  console.warn("AVISO: JWT_SECRET não definido. Usando segredo de fallback (inseguro para produção).");
 }
 
 // Conexão com Banco de Dados
@@ -42,10 +48,9 @@ pool.connect((err, client, release) => {
   }
 });
 
-// Inicialização do Banco de Dados (Criação de Tabelas)
+// Inicialização do Banco de Dados
 const initDb = async () => {
   try {
-    // 1. Criar tabelas se não existirem
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY,
@@ -67,15 +72,14 @@ const initDb = async () => {
       );
     `);
 
-    // 2. Migração de segurança: Garantir que created_at é BIGINT (caso tabela tenha sido criada errada antes)
+    // Migração de segurança para created_at
     try {
       await pool.query('ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT');
-      console.log('Schema da tabela users verificado.');
     } catch (e) {
-      console.log('Nota sobre schema users:', e.message);
+      // Ignorar erro se já estiver correto ou tabela vazia
     }
 
-    console.log('Banco de dados inicializado corretamente.');
+    console.log('Banco de dados pronto.');
   } catch (err) {
     console.error('Erro fatal ao inicializar tabelas:', err);
   }
@@ -87,7 +91,7 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.sendStatus(401);
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
     next();
@@ -98,7 +102,7 @@ const authenticateToken = (req, res, next) => {
 
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
-  console.log(`API: Tentativa de cadastro para ${username}`);
+  console.log(`API Register: Iniciando cadastro para ${username}`);
 
   if (!username || !email || !password) {
     return res.status(400).json({ message: 'Todos os campos são obrigatórios' });
@@ -106,7 +110,7 @@ app.post('/api/auth/register', async (req, res) => {
 
   try {
     // Verificar se usuário existe
-    const userCheck = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    const userCheck = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
     if (userCheck.rows.length > 0) {
       return res.status(400).json({ message: 'Este nome de usuário já está em uso.' });
     }
@@ -117,21 +121,35 @@ app.post('/api/auth/register', async (req, res) => {
     const createdAt = Date.now(); 
 
     // Criar usuário
-    const newUser = await pool.query(
+    const newUserResult = await pool.query(
       'INSERT INTO users (id, username, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email',
       [id, username, email, hashedPassword, createdAt]
     );
 
-    console.log(`API: Usuário cadastrado ID: ${newUser.rows[0].id}`);
+    const newUser = newUserResult.rows[0];
+    
+    if (!newUser) {
+      throw new Error("Falha ao recuperar usuário recém-criado.");
+    }
+
+    console.log(`API Register: Usuário inserido no DB. Gerando token...`);
 
     // Gerar Token
-    const token = jwt.sign({ id: newUser.rows[0].id, username }, process.env.JWT_SECRET);
-    res.json({ success: true, user: newUser.rows[0], token });
+    const token = jwt.sign({ id: newUser.id, username: newUser.username }, JWT_SECRET);
+
+    if (!token) {
+      throw new Error("Falha ao gerar token JWT.");
+    }
+
+    const responsePayload = { success: true, user: newUser, token };
+    console.log("API Register: Enviando resposta de sucesso.");
+    
+    res.json(responsePayload);
+
   } catch (err) {
-    console.error("API: Erro Crítico no Registro:", err);
-    // Retorna JSON explícito com o erro
+    console.error("API Register ERROR:", err);
     res.status(500).json({ 
-      message: `Erro no banco de dados: ${err.message}`, 
+      message: `Erro interno: ${err.message}`, 
       details: err.detail 
     });
   }
@@ -147,13 +165,12 @@ app.post('/api/auth/login', async (req, res) => {
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) return res.status(400).json({ message: 'Senha incorreta' });
 
-    const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET);
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
     
-    // Remover hash da resposta
     delete user.password_hash;
     res.json({ success: true, user, token });
   } catch (err) {
-    console.error("API: Erro no Login:", err);
+    console.error("API Login ERROR:", err);
     res.status(500).json({ message: err.message || 'Erro interno ao realizar login' });
   }
 });
@@ -172,12 +189,10 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 app.post('/api/auth/check-username', async (req, res) => {
   const { username } = req.body;
   try {
-    // Verifica conexão antes
     const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
     res.json({ available: result.rows.length === 0 });
   } catch (err) {
-    console.error("API: Erro check-username:", err.message);
-    // Retorna erro 500 para que o frontend possa decidir o que fazer (ignorar ou mostrar erro)
+    console.error("API check-username ERROR:", err.message);
     res.status(500).json({ message: 'Erro de conexão com o banco' });
   }
 });
@@ -224,18 +239,15 @@ app.get('/api/records', authenticateToken, async (req, res) => {
   }
 });
 
-// Endpoint de debug para verificar se a API está de pé
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-// All other GET requests not handled before will return the React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
-// Inicializa o DB e depois inicia o servidor
 initDb().then(() => {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 });
