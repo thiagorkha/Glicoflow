@@ -1,7 +1,7 @@
 import { User, AuthResponse } from '../types';
 
-// Use relative URL so it works automatically when served by the backend
-const API_BASE_URL = '.backend/server.js'; 
+// O valor correto é '/api' para que o proxy do Vite ou o servidor Express direcione corretamente
+const API_BASE_URL = '/api'; 
 
 // Helper para obter cabeçalhos com o token
 const getHeaders = () => {
@@ -78,8 +78,7 @@ export const checkUsernameAvailability = async (username: string): Promise<boole
     });
     
     // Se der erro no servidor (500, timeout, etc), retornamos true para permitir 
-    // que o usuário tente o cadastro e receba o erro real do endpoint de registro,
-    // em vez de ficar com a UI bloqueada.
+    // que o usuário tente o cadastro e receba o erro real do endpoint de registro
     if (!response.ok) return true;
     
     const data = await parseJSON(response);

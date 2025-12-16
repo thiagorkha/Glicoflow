@@ -1,7 +1,7 @@
 import { GlucoseRecord } from '../types';
 
-// Use relative URL so it works automatically when served by the backend
-const API_BASE_URL = '.backend/server.js'; 
+// O valor correto é '/api' para que o proxy do Vite ou o servidor Express direcione corretamente
+const API_BASE_URL = '/api'; 
 
 const getHeaders = () => {
   const token = localStorage.getItem('glicoflow_token');
@@ -59,8 +59,6 @@ export const getUserHistory = async (
 
 export const getStats = async (userId: string) => {
   // Busca o histórico completo ou parcial para calcular estatísticas
-  // O ideal seria um endpoint dedicado /stats, mas calcularemos no front por enquanto
-  // para manter compatibilidade com a estrutura anterior
   const records = await getUserHistory(userId);
   
   if (!records || records.length === 0) return { avg: 0, count: 0, last: 0 };
@@ -69,8 +67,8 @@ export const getStats = async (userId: string) => {
   const avg = Math.round(total / records.length);
   
   // Ordena por data/hora decrescente para pegar o último registro
-  // Assume que o backend retorna datas no formato YYYY-MM-DD
   records.sort((a, b) => {
+    // Datas no formato YYYY-MM-DD
     const dateA = new Date(`${a.date}T${a.time}`);
     const dateB = new Date(`${b.date}T${b.time}`);
     return dateB.getTime() - dateA.getTime();
