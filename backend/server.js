@@ -20,23 +20,39 @@ app.use(express.json());
 // Serve static files from the React frontend app (dist folder)
 app.use(express.static(path.join(__dirname, '../dist')));
 
+// Verificação de segurança da URL do banco
+if (!process.env.DATABASE_URL) {
+  console.error("ERRO CRÍTICO: DATABASE_URL não está definida nas variáveis de ambiente.");
+}
+
 // Conexão com Banco de Dados
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false } // Necessário para Render
 });
 
+// Testar conexão na inicialização
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('Erro ao conectar no Banco de Dados:', err.message);
+  } else {
+    console.log('Conexão com Banco de Dados estabelecida com sucesso.');
+    release();
+  }
+});
+
 // Inicialização do Banco de Dados (Criação de Tabelas)
 const initDb = async () => {
   try {
-    // Nota: O CAST ou ::BIGINT é essencial para evitar erro de tipo na inserção
+    // Nota: Removemos o DEFAULT complexo para evitar conflitos se a tabela já existir com schema antigo.
+    // O valor de created_at será passado via aplicação.
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
         email VARCHAR(255) NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+        created_at BIGINT
       );
       
       CREATE TABLE IF NOT EXISTS glucose_records (
@@ -48,9 +64,9 @@ const initDb = async () => {
         created_at BIGINT NOT NULL
       );
     `);
-    console.log('Banco de dados inicializado com sucesso!');
+    console.log('Tabelas verificadas/criadas com sucesso!');
   } catch (err) {
-    console.error('Erro ao inicializar banco de dados:', err);
+    console.error('Erro ao inicializar tabelas:', err);
   }
 };
 
@@ -71,29 +87,38 @@ const authenticateToken = (req, res, next) => {
 
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
+  console.log(`Tentativa de cadastro: ${username} (${email})`);
+
   try {
     // Verificar se usuário existe
     const userCheck = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-    if (userCheck.rows.length > 0) return res.status(400).json({ message: 'Usuário já existe' });
+    if (userCheck.rows.length > 0) {
+      return res.status(400).json({ message: 'Usuário já existe' });
+    }
 
     // Hash da senha
     const hashedPassword = await bcrypt.hash(password, 10);
     const id = randomUUID();
+    const createdAt = Date.now(); // Gera timestamp em milissegundos (BIGINT compatível)
 
-    // Criar usuário
-    // A coluna created_at será preenchida automaticamente pelo DEFAULT corrigido
+    // Criar usuário passando created_at explicitamente para evitar erros de Default Value antigo no banco
     const newUser = await pool.query(
-      'INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, username, email',
-      [id, username, email, hashedPassword]
+      'INSERT INTO users (id, username, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email',
+      [id, username, email, hashedPassword, createdAt]
     );
+
+    console.log(`Usuário cadastrado com sucesso: ${username}`);
 
     // Gerar Token
     const token = jwt.sign({ id: newUser.rows[0].id, username }, process.env.JWT_SECRET);
     res.json({ success: true, user: newUser.rows[0], token });
   } catch (err) {
-    console.error("Erro no registro:", err);
+    console.error("Erro detalhado no registro:", err);
     // Retorna a mensagem real do erro para facilitar o debug no frontend
-    res.status(500).json({ message: err.message || 'Erro interno ao cadastrar usuário' });
+    res.status(500).json({ 
+      message: err.message || 'Erro interno ao cadastrar usuário',
+      details: err.detail // Postgres detalha violações aqui
+    });
   }
 });
 
@@ -135,8 +160,8 @@ app.post('/api/auth/check-username', async (req, res) => {
     const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
     res.json({ available: result.rows.length === 0 });
   } catch (err) {
-    console.error(err);
-    // Retorna true para não bloquear a UI em caso de erro de DB, mas loga o erro
+    console.error("Erro check-username:", err.message);
+    // Retorna true para não bloquear a UI em caso de erro de DB
     res.status(500).json({ message: 'Erro ao verificar usuário' });
   }
 });
