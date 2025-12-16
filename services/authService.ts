@@ -1,7 +1,7 @@
 import { User, AuthResponse } from '../types';
 
 // Use relative URL so it works automatically when served by the backend
-const API_BASE_URL = '/api'; 
+const API_BASE_URL = 'backend/server.js'; 
 
 // Helper para obter cabeçalhos com o token
 const getHeaders = () => {
@@ -12,6 +12,17 @@ const getHeaders = () => {
   };
 };
 
+// Helper seguro para fazer parse do JSON
+const parseJSON = async (response: Response) => {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (e) {
+    console.error('Failed to parse JSON response:', text);
+    throw new Error('Resposta inválida do servidor');
+  }
+};
+
 export const registerUser = async (username: string, email: string, password: string): Promise<AuthResponse> => {
   try {
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
@@ -20,7 +31,7 @@ export const registerUser = async (username: string, email: string, password: st
       body: JSON.stringify({ username, email, password }),
     });
     
-    const data = await response.json();
+    const data = await parseJSON(response);
     
     if (response.ok && data.token) {
       localStorage.setItem('glicoflow_token', data.token);
@@ -43,7 +54,7 @@ export const loginUser = async (username: string, password: string): Promise<Aut
       body: JSON.stringify({ username, password }),
     });
 
-    const data = await response.json();
+    const data = await parseJSON(response);
 
     if (response.ok && data.token) {
       localStorage.setItem('glicoflow_token', data.token);
@@ -66,7 +77,7 @@ export const checkUsernameAvailability = async (username: string): Promise<boole
     });
     
     if (!response.ok) return false;
-    const data = await response.json();
+    const data = await parseJSON(response);
     return data.available;
   } catch (error) {
     console.error("Check username failed", error);
@@ -85,7 +96,7 @@ export const checkAutoLogin = async (): Promise<User | null> => {
     });
 
     if (response.ok) {
-      const data = await response.json();
+      const data = await parseJSON(response);
       return data.user;
     } else {
       // Token inválido ou expirado

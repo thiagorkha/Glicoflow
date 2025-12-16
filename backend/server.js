@@ -18,7 +18,6 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static files from the React frontend app (dist folder)
-// Assumes server.js is in /backend and dist is in /dist (root)
 app.use(express.static(path.join(__dirname, '../dist')));
 
 // Conexão com Banco de Dados
@@ -26,6 +25,33 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false } // Necessário para Render
 });
+
+// Inicialização do Banco de Dados (Criação de Tabelas)
+const initDb = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)
+      );
+      
+      CREATE TABLE IF NOT EXISTS glucose_records (
+        id UUID PRIMARY KEY,
+        user_id UUID REFERENCES users(id),
+        value INTEGER NOT NULL,
+        date VARCHAR(10) NOT NULL,
+        time VARCHAR(5) NOT NULL,
+        created_at BIGINT NOT NULL
+      );
+    `);
+    console.log('Banco de dados inicializado com sucesso!');
+  } catch (err) {
+    console.error('Erro ao inicializar banco de dados:', err);
+  }
+};
 
 // Middleware de Autenticação
 const authenticateToken = (req, res, next) => {
@@ -63,7 +89,8 @@ app.post('/api/auth/register', async (req, res) => {
     const token = jwt.sign({ id: newUser.rows[0].id, username }, process.env.JWT_SECRET);
     res.json({ success: true, user: newUser.rows[0], token });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Erro interno ao cadastrar usuário' });
   }
 });
 
@@ -83,23 +110,32 @@ app.post('/api/auth/login', async (req, res) => {
     delete user.password_hash;
     res.json({ success: true, user, token });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Erro interno ao realizar login' });
   }
 });
 
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, username, email FROM users WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.sendStatus(404);
     res.json({ user: result.rows[0] });
   } catch (err) {
+    console.error(err);
     res.sendStatus(500);
   }
 });
 
 app.post('/api/auth/check-username', async (req, res) => {
   const { username } = req.body;
-  const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
-  res.json({ available: result.rows.length === 0 });
+  try {
+    const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
+    res.json({ available: result.rows.length === 0 });
+  } catch (err) {
+    console.error(err);
+    // Retorna true para não bloquear a UI em caso de erro de DB, mas loga o erro
+    res.status(500).json({ error: 'Erro ao verificar usuário' });
+  }
 });
 
 // --- ROTAS DE DADOS (Glicemia) ---
@@ -116,6 +152,7 @@ app.post('/api/records', authenticateToken, async (req, res) => {
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -138,6 +175,7 @@ app.get('/api/records', authenticateToken, async (req, res) => {
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -148,4 +186,7 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Inicializa o DB e depois inicia o servidor
+initDb().then(() => {
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+});
