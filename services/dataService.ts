@@ -1,7 +1,7 @@
 import { GlucoseRecord } from '../types';
 
 // Use relative URL so it works automatically when served by the backend
-const API_BASE_URL = '/backend/server.js'; 
+const API_BASE_URL = './backend/server.js'; 
 
 const getHeaders = () => {
   const token = localStorage.getItem('glicoflow_token');

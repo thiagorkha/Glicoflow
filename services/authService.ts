@@ -1,7 +1,7 @@
 import { User, AuthResponse } from '../types';
 
 // Use relative URL so it works automatically when served by the backend
-const API_BASE_URL = '/backend/server.js'; 
+const API_BASE_URL = './backend/server.js'; 
 
 // Helper para obter cabeçalhos com o token
 const getHeaders = () => {
