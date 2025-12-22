@@ -7,50 +7,37 @@ Migrar a aplicação de uma planilha local/mock para um deploy real no **Render*
 
 ## Log de Conversas e Alterações
 
-### 1. Configuração Inicial para Deploy (Render + PostgreSQL)
-**Ações:** Criação do backend Express, integração com Postgres e JWT, e adaptação do frontend para consumo de API real.
-
-### 2. Depuração do Erro "Status 200 / Body {}"
-**Problema:** O servidor retornava sucesso, mas o conteúdo chegava vazio ao frontend.
-**Causas Investigadas:**
-- Incompatibilidade de importação do módulo `pg` em ESM.
-- Falha na serialização automática do Express (`res.json`).
-
-**Correções Implementadas:**
-- **Blindagem de Resposta:** Uso de `JSON.stringify` manual e logs verbosos no backend.
-- **Checklist de Ambiente:** Criado guia detalhado para configuração no painel do Render.
+### 3. Correção do Erro `ENOENT` (Pasta `dist` não encontrada)
+**Problema:** No deploy, o servidor iniciava mas falhava ao tentar servir o `index.html`, pois a pasta `dist` não existia ou o caminho estava incorreto.
+**Ações:**
+- Simplificação do comando de build no `package.json` para garantir a geração da pasta.
+- Adição de diagnóstico de caminhos no `server.js` para mostrar exatamente onde o servidor está procurando os arquivos.
+- Adição de verificação `fs.existsSync` para evitar crash silencioso.
 
 ---
 
-## 🛠 Checklist Detalhado de Configuração no Render
+## 🛠 Guia Definitivo de Deploy no Render
 
-Para configurar seu serviço no Render (Web Service), siga estes passos na aba **Environment**:
+Se você está vendo erros de "file not found", verifique estas configurações no painel do Render:
 
-### 1. Configurando NODE_ENV
-- **O que fazer:** Clique em "Add Environment Variable".
-- **Chave:** `NODE_ENV`
-- **Valor:** `production`
-- **Por que?** Isso informa ao Express que ele deve rodar em modo de alta performance e avisa ao nosso código (`server.js`) para ativar o **SSL Rejeitar Não Autorizados: false**, necessário para conectar com segurança aos bancos de dados gerenciados do Render.
+### 1. Comandos de Build e Start
+No campo **Settings** do seu Web Service:
+- **Build Command:** `npm install && npm run build`
+- **Start Command:** `npm start` (ou `node backend/server.js`)
 
-### 2. Configurando a PORT (Porta)
-- **O que fazer:** **Não é necessário criar manualmente.**
-- **Como funciona:** O Render injeta automaticamente uma variável chamada `PORT` com um valor dinâmico (ex: 10000).
-- **Validação no Código:** Nosso servidor já está configurado com `const PORT = process.env.PORT || 3000;`. 
-- **Dica:** Se o Render der erro de "Timed out waiting for port to become available", certifique-se de que o campo "Start Command" no Render está como `npm start`.
+### 2. Variáveis de Ambiente (Aba Environment)
+- `NODE_ENV`: `production`
+- `DATABASE_URL`: Use a **Internal Database URL** do seu banco Render.
+- `JWT_SECRET`: Uma senha forte para os tokens.
 
-### 3. DATABASE_URL (Banco de Dados)
-- **O que fazer:** Se você criou o banco de dados no mesmo "Project" do Render, use a **Internal Database URL** (mais rápida e gratuita entre serviços).
-- **Chave:** `DATABASE_URL`
-- **Valor:** `postgres://usuario:senha@host-interno/banco`
-
-### 4. JWT_SECRET
-- **O que fazer:** Crie uma chave de segurança para os tokens dos usuários.
-- **Chave:** `JWT_SECRET`
-- **Valor:** Digite qualquer frase longa e aleatória (ex: `minha-chave-ultra-secreta-123`).
+### 3. Por que o erro `ENOENT` acontece?
+1. O comando `npm run build` não foi executado (o Render precisa dele para criar a pasta `dist`).
+2. O comando de build falhou (verifique os logs de build anteriores ao erro de runtime).
+3. O caminho relativo no `server.js` está errado (corrigido agora com logs de diagnóstico).
 
 ---
 
 ## Estrutura Atual do Backend (`server.js`)
 - **Autenticação:** JWT + BCryptJS.
 - **Persistência:** PostgreSQL (Pool de conexões).
-- **Frontend:** Estático servido pela pasta `/dist`.
+- **Frontend:** Estático servido pela pasta `/dist`, com redirecionamento Single Page Application (SPA).

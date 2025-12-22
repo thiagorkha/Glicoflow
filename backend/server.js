@@ -6,28 +6,38 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const { Pool } = pkg;
+// No Render, o servidor roda em /opt/render/project/src/backend
+// A pasta dist deveria estar em /opt/render/project/src/dist
+const distPath = path.join(__dirname, '../dist');
 
+console.log('--- DIAGNÓSTICO DE CAMINHOS ---');
+console.log('__dirname atual:', __dirname);
+console.log('Caminho dist alvo:', distPath);
+if (fs.existsSync(distPath)) {
+  console.log('✅ Pasta dist encontrada com sucesso.');
+} else {
+  console.error('❌ ERRO: Pasta dist NÃO ENCONTRADA no caminho:', distPath);
+  console.log('Conteúdo do diretório pai:', fs.readdirSync(path.join(__dirname, '..')));
+}
+
+const { Pool } = pkg;
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use(express.static(path.join(__dirname, '../dist')));
+// Servir arquivos estáticos
+app.use(express.static(distPath));
 
 // Configurações de Ambiente
 const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-fallback-12345';
 const PORT = process.env.PORT || 3000;
-
-console.log('--- INICIALIZANDO SERVIDOR ---');
-if (!DATABASE_URL) {
-  console.error("ERRO: DATABASE_URL não encontrada!");
-}
 
 // Configuração SSL
 const needsSSL = DATABASE_URL && (DATABASE_URL.includes('render.com') || DATABASE_URL.includes('aws') || DATABASE_URL.includes('elephantsql'));
@@ -40,13 +50,10 @@ const pool = new Pool({
   ssl: sslConfig
 });
 
-pool.on('error', (err) => {
-  console.error('Erro inesperado no cliente do pool:', err);
-});
+pool.on('error', (err) => console.error('Erro no pool do Postgres:', err));
 
 const initDb = async () => {
   try {
-    console.log('Verificando tabelas...');
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY,
@@ -56,7 +63,6 @@ const initDb = async () => {
         created_at BIGINT
       );
     `);
-    
     await pool.query(`
       CREATE TABLE IF NOT EXISTS glucose_records (
         id UUID PRIMARY KEY,
@@ -67,9 +73,9 @@ const initDb = async () => {
         created_at BIGINT NOT NULL
       );
     `);
-    console.log('Banco de dados pronto.');
+    console.log('Banco de dados verificado.');
   } catch (err) {
-    console.error('Erro ao inicializar tabelas:', err.message);
+    console.error('Erro ao inicializar banco:', err.message);
   }
 };
 
@@ -77,7 +83,6 @@ const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.sendStatus(401);
-
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
@@ -85,93 +90,42 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// --- ROTAS ---
-
+// Rotas da API
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
-  console.log(`\n[REGISTER] Tentativa para: ${username} (${email})`);
-
-  if (!username || !email || !password) {
-    return res.status(400).json({ message: 'Campos incompletos' });
-  }
-
   try {
     const userCheck = await pool.query('SELECT username FROM users WHERE username = $1', [username]);
-    if (userCheck.rows.length > 0) {
-      console.log(`[REGISTER] Usuário já existe: ${username}`);
-      return res.status(400).json({ message: 'Nome de usuário já existe' });
-    }
-
+    if (userCheck.rows.length > 0) return res.status(400).json({ message: 'Usuário já existe' });
     const hashedPassword = await bcrypt.hash(password, 10);
     const id = randomUUID();
-    
-    console.log(`[REGISTER] Inserindo no banco...`);
-    const insertResult = await pool.query(
+    const result = await pool.query(
       'INSERT INTO users (id, username, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email',
       [id, username, email, hashedPassword, Date.now()]
     );
-
-    const newUser = insertResult.rows[0];
-    if (!newUser) {
-      throw new Error("Falha ao recuperar usuário após inserção");
-    }
-
-    console.log(`[REGISTER] Gerando token para ID: ${newUser.id}`);
+    const newUser = result.rows[0];
     const token = jwt.sign({ id: newUser.id, username: newUser.username }, JWT_SECRET);
-
-    const payload = {
-      success: true,
-      user: newUser,
-      token: token
-    };
-
-    console.log(`[REGISTER] Sucesso! Enviando payload.`);
-    // Usamos res.send com JSON.stringify para garantir que não vá vazio
-    return res.status(200).set('Content-Type', 'application/json').send(JSON.stringify(payload));
-
+    res.status(200).set('Content-Type', 'application/json').send(JSON.stringify({ success: true, user: newUser, token }));
   } catch (err) {
-    console.error("[REGISTER ERROR]:", err);
-    return res.status(500).json({ message: 'Erro no servidor', details: err.message });
+    res.status(500).json({ message: 'Erro no servidor', details: err.message });
   }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
-  console.log(`\n[LOGIN] Tentativa para: ${username}`);
-  
   try {
     const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-    if (result.rows.length === 0) {
-      return res.status(400).json({ message: 'Usuário não encontrado' });
-    }
-
+    if (result.rows.length === 0) return res.status(400).json({ message: 'Usuário não encontrado' });
     const user = result.rows[0];
     const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      return res.status(400).json({ message: 'Senha inválida' });
-    }
-
+    if (!valid) return res.status(400).json({ message: 'Senha inválida' });
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
-    const payload = {
-      success: true,
-      user: { id: user.id, username: user.username, email: user.email },
-      token: token
-    };
-
-    console.log(`[LOGIN] Sucesso para ${username}`);
-    return res.status(200).set('Content-Type', 'application/json').send(JSON.stringify(payload));
+    res.status(200).set('Content-Type', 'application/json').send(JSON.stringify({ 
+      success: true, 
+      user: { id: user.id, username: user.username, email: user.email }, 
+      token 
+    }));
   } catch (err) {
-    console.error("[LOGIN ERROR]:", err);
-    return res.status(500).json({ message: 'Erro no servidor' });
-  }
-});
-
-app.post('/api/auth/check-username', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT 1 FROM users WHERE username = $1', [req.body.username]);
-    res.json({ available: result.rows.length === 0 });
-  } catch (err) {
-    res.status(200).json({ available: true });
+    res.status(500).json({ message: 'Erro no servidor' });
   }
 });
 
@@ -211,8 +165,14 @@ app.get('/api/records', authenticateToken, async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
+// Redirecionar todas as outras rotas para o index.html do React
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Frontend não encontrado. Verifique o build.');
+  }
 });
 
 initDb().then(() => {
