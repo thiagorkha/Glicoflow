@@ -7,29 +7,29 @@ Migrar a aplicação de uma planilha local/mock para um deploy real no **Render*
 
 ## Log de Conversas e Alterações
 
-### 5. Correção do Erro `sh: 1: vite: not found`
-**Problema:** O comando `npm run build` falhava no Render com o erro "vite: not found".
-**Causa:** O Render, com `NODE_ENV=production`, não instala dependências de desenvolvimento (`devDependencies`). Como o Vite é necessário para gerar a pasta `dist` durante o build, ele precisa estar disponível.
-**Solução:** Movidas as dependências `vite`, `@vitejs/plugin-react` e `typescript` para a seção `dependencies` no `package.json`.
+### 6. Implementação de Verificações Anti-Falhas Silenciosas
+**Problema:** O backend podia "subir" mas não funcionar por falta de variáveis de ambiente ou erro de conexão com o banco que só aparecia na primeira requisição do usuário.
+**Solução:** Implementadas duas verificações críticas no startup do servidor:
+
+1.  **Verificação de Configuração (Check 1):** O servidor agora valida explicitamente a presença de `DATABASE_URL` e `JWT_SECRET` ao iniciar, emitindo erros claros no log se estiverem faltando.
+2.  **Verificação de Conectividade (Check 2):** Realiza uma query real (`SELECT NOW()`) no banco de dados assim que o servidor inicia, garantindo que o pool de conexões e o SSL estão configurados corretamente antes de aceitar tráfego.
 
 ---
 
 ## 🛠 Guia de Deploy no Render (Checklist Final)
 
-Se você encontrar erros no deploy, revise estes pontos:
-
 ### 1. Dependências de Build
-As ferramentas de build (Vite) agora estão nas dependências principais. Isso garante que o comando `npm run build` funcione mesmo quando o ambiente está configurado como `production`.
+As ferramentas de build (Vite) agora estão nas dependências principais para garantir funcionamento em `NODE_ENV=production`.
 
-### 2. Configurações no Painel do Render (Aba Settings)
+### 2. Conectividade do Banco de Dados
+Verifique os logs do **Web Service**. Se o banco estiver inacessível, você verá a mensagem `❌ ERRO AO INICIALIZAR BANCO DE DADOS`. Se estiver ok, verá `✅ Conexão com PostgreSQL confirmada`.
+
+### 3. Código (Possíveis Falhas Silenciosas)
+O código agora evita falhas silenciosas:
+- **Check A:** Garante que o frontend está sendo servido da pasta correta através de logs de caminho absoluto.
+- **Check B:** Valida se o banco está respondendo a queries básicas no momento do boot.
+
+### 4. Configurações no Painel do Render
 - **Build Command:** `npm install && npm run build`
 - **Start Command:** `npm start`
-- **Root Directory:** Deixe em **BRANCO** (vazio).
-
-### 3. Variáveis de Ambiente (Aba Environment)
-- `NODE_ENV`: `production`
-- `DATABASE_URL`: URL de conexão do seu PostgreSQL.
-- `JWT_SECRET`: Uma string aleatória para segurança.
-
-### 4. Diagnóstico de Pasta dist
-Se o servidor iniciar mas der erro de "index.html not found", observe os logs de inicialização. O `server.js` agora imprime o conteúdo da raiz do projeto para ajudar a localizar onde a pasta `dist` foi criada.
+- **Root Directory:** **VAZIO**.

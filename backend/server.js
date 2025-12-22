@@ -25,16 +25,8 @@ console.log('Caminho absoluto para dist:', distPath);
 
 if (fs.existsSync(distPath)) {
   console.log('✅ Pasta dist encontrada em:', distPath);
-  console.log('Conteúdo da pasta dist:', fs.readdirSync(distPath));
 } else {
   console.error('❌ ERRO: Pasta dist NÃO ENCONTRADA!');
-  console.log('Listando arquivos na raiz para depuração:');
-  try {
-    const rootFiles = fs.readdirSync(rootDir);
-    console.log('Arquivos na raiz:', rootFiles);
-  } catch (e) {
-    console.error('Não foi possível listar a raiz:', e.message);
-  }
 }
 
 const { Pool } = pkg;
@@ -49,6 +41,16 @@ app.use(express.static(distPath));
 const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-fallback-12345';
 const PORT = process.env.PORT || 3000;
+
+// VERIFICAÇÃO DE SEGURANÇA (Falha Silenciosa 1: Variáveis de Ambiente)
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ ERRO CRÍTICO: DATABASE_URL não definida no ambiente de produção!');
+  }
+  if (!process.env.JWT_SECRET) {
+    console.warn('⚠️ AVISO DE SEGURANÇA: JWT_SECRET não definido. Usando fallback inseguro.');
+  }
+}
 
 // Configuração SSL para PostgreSQL
 const needsSSL = DATABASE_URL && (DATABASE_URL.includes('render.com') || DATABASE_URL.includes('aws') || DATABASE_URL.includes('elephantsql'));
@@ -65,6 +67,10 @@ pool.on('error', (err) => console.error('Erro crítico no pool do Postgres:', er
 
 const initDb = async () => {
   try {
+    // VERIFICAÇÃO DE CONECTIVIDADE (Falha Silenciosa 2: Teste de Query Real)
+    const testConn = await pool.query('SELECT NOW() as current_time');
+    console.log('✅ Conexão com PostgreSQL confirmada. Hora do banco:', testConn.rows[0].current_time);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY,
@@ -84,9 +90,13 @@ const initDb = async () => {
         created_at BIGINT NOT NULL
       );
     `);
-    console.log('✅ Banco de dados inicializado/verificado.');
+    console.log('✅ Tabelas verificadas/criadas com sucesso.');
   } catch (err) {
-    console.error('❌ Erro ao inicializar banco:', err.message);
+    console.error('❌ ERRO AO INICIALIZAR BANCO DE DADOS:', err.message);
+    // Em produção, se o banco falhar, o app não deve fingir que está tudo bem
+    if (process.env.NODE_ENV === 'production') {
+      console.error('Dica: Verifique se o IP do Render está liberado no banco ou se a URL está correta.');
+    }
   }
 };
 
@@ -116,7 +126,7 @@ app.post('/api/auth/register', async (req, res) => {
     );
     const newUser = result.rows[0];
     const token = jwt.sign({ id: newUser.id, username: newUser.username }, JWT_SECRET);
-    res.status(200).set('Content-Type', 'application/json').send(JSON.stringify({ success: true, user: newUser, token }));
+    res.status(200).json({ success: true, user: newUser, token });
   } catch (err) {
     res.status(500).json({ message: 'Erro no servidor', details: err.message });
   }
@@ -131,11 +141,11 @@ app.post('/api/auth/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(400).json({ message: 'Senha inválida' });
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
-    res.status(200).set('Content-Type', 'application/json').send(JSON.stringify({ 
+    res.status(200).json({ 
       success: true, 
       user: { id: user.id, username: user.username, email: user.email }, 
       token 
-    }));
+    });
   } catch (err) {
     res.status(500).json({ message: 'Erro no servidor' });
   }
@@ -175,15 +185,13 @@ app.get('/api/records', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', environment: process.env.NODE_ENV }));
-
 // Redirecionamento SPA (Single Page Application)
 app.get('*', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).send(`Frontend não disponível em ${indexPath}. Verifique os logs de build.`);
+    res.status(404).send(`Frontend não disponível. Verifique os logs de build.`);
   }
 });
 

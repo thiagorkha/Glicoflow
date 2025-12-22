@@ -11,6 +11,16 @@ const getHeaders = () => {
   };
 };
 
+const safeParseJSON = async (response: Response) => {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (e) {
+    console.error('Resposta não-JSON recebida:', text);
+    throw new Error(`Erro do servidor: Resposta inválida (${response.status})`);
+  }
+};
+
 export const addGlucoseRecord = async (
   userId: string,
   value: number,
@@ -24,10 +34,11 @@ export const addGlucoseRecord = async (
   });
 
   if (!response.ok) {
-    throw new Error('Falha ao salvar registro');
+    const errorData = await safeParseJSON(response).catch(() => ({ message: 'Erro desconhecido' }));
+    throw new Error(errorData.message || 'Falha ao salvar registro');
   }
 
-  return response.json();
+  return safeParseJSON(response);
 };
 
 export const getUserHistory = async (
@@ -46,19 +57,18 @@ export const getUserHistory = async (
     });
 
     if (!response.ok) {
-      console.error("Falha ao buscar histórico");
+      console.error("Falha ao buscar histórico:", response.status);
       return [];
     }
 
-    return await response.json();
+    return await safeParseJSON(response);
   } catch (error) {
-    console.error("Erro de conexão", error);
+    console.error("Erro de conexão no histórico:", error);
     return [];
   }
 };
 
 export const getStats = async (userId: string) => {
-  // Busca o histórico completo ou parcial para calcular estatísticas
   const records = await getUserHistory(userId);
   
   if (!records || records.length === 0) return { avg: 0, count: 0, last: 0 };
@@ -67,14 +77,13 @@ export const getStats = async (userId: string) => {
   const avg = Math.round(total / records.length);
   
   // Ordena por data/hora decrescente para pegar o último registro
-  records.sort((a, b) => {
-    // Datas no formato YYYY-MM-DD
+  const sorted = [...records].sort((a, b) => {
     const dateA = new Date(`${a.date}T${a.time}`);
     const dateB = new Date(`${b.date}T${b.time}`);
     return dateB.getTime() - dateA.getTime();
   });
 
-  const last = records[0].value;
+  const last = sorted[0].value;
 
   return { avg, count: records.length, last };
 };
