@@ -15,27 +15,38 @@ Migrar a aplicação de uma planilha local/mock para um deploy real no **Render*
 **Causas Investigadas:**
 - Incompatibilidade de importação do módulo `pg` em ESM.
 - Falha na serialização automática do Express (`res.json`).
-- SSL do PostgreSQL não configurado corretamente para o Render.
-- Possível inserção no banco falhando silenciosamente.
 
 **Correções Implementadas:**
-- **Blindagem de Resposta:** Substituição de `res.json` por `res.status(200).send(JSON.stringify(payload))` para garantir a integridade do dado.
-- **Logs Verbosos:** Adicionados logs no servidor para cada etapa do registro e login (visíveis no painel do Render).
-- **Checklist de Ambiente:** Criado guia para verificação de variáveis de ambiente no Render.
+- **Blindagem de Resposta:** Uso de `JSON.stringify` manual e logs verbosos no backend.
+- **Checklist de Ambiente:** Criado guia detalhado para configuração no painel do Render.
 
 ---
 
-## 🛠 Checklist de Configuração no Render
+## 🛠 Checklist Detalhado de Configuração no Render
 
-1.  **Environment Variables:**
-    - `DATABASE_URL`: Deve estar presente e correta.
-    - `JWT_SECRET`: Recomendado definir uma string longa e aleatória.
-    - `NODE_ENV`: `production`.
-2.  **PostgreSQL Settings:**
-    - Verificar se o banco está ativo.
-    - Em caso de conexões externas (fora do Render), liberar o IP.
-3.  **Logs:**
-    - Monitorar a aba "Logs" do Web Service para mensagens de erro de conexão ou erros de SQL.
+Para configurar seu serviço no Render (Web Service), siga estes passos na aba **Environment**:
+
+### 1. Configurando NODE_ENV
+- **O que fazer:** Clique em "Add Environment Variable".
+- **Chave:** `NODE_ENV`
+- **Valor:** `production`
+- **Por que?** Isso informa ao Express que ele deve rodar em modo de alta performance e avisa ao nosso código (`server.js`) para ativar o **SSL Rejeitar Não Autorizados: false**, necessário para conectar com segurança aos bancos de dados gerenciados do Render.
+
+### 2. Configurando a PORT (Porta)
+- **O que fazer:** **Não é necessário criar manualmente.**
+- **Como funciona:** O Render injeta automaticamente uma variável chamada `PORT` com um valor dinâmico (ex: 10000).
+- **Validação no Código:** Nosso servidor já está configurado com `const PORT = process.env.PORT || 3000;`. 
+- **Dica:** Se o Render der erro de "Timed out waiting for port to become available", certifique-se de que o campo "Start Command" no Render está como `npm start`.
+
+### 3. DATABASE_URL (Banco de Dados)
+- **O que fazer:** Se você criou o banco de dados no mesmo "Project" do Render, use a **Internal Database URL** (mais rápida e gratuita entre serviços).
+- **Chave:** `DATABASE_URL`
+- **Valor:** `postgres://usuario:senha@host-interno/banco`
+
+### 4. JWT_SECRET
+- **O que fazer:** Crie uma chave de segurança para os tokens dos usuários.
+- **Chave:** `JWT_SECRET`
+- **Valor:** Digite qualquer frase longa e aleatória (ex: `minha-chave-ultra-secreta-123`).
 
 ---
 
