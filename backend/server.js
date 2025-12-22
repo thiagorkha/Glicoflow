@@ -12,18 +12,29 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// No Render, o servidor roda em /opt/render/project/src/backend
-// A pasta dist deveria estar em /opt/render/project/src/dist
-const distPath = path.join(__dirname, '../dist');
+/**
+ * No Render, o comando 'npm start' roda na raiz do projeto (/opt/render/project/src).
+ * O Vite gera a pasta 'dist' na raiz. Portanto, process.cwd() + '/dist' é o local correto.
+ */
+const rootDir = process.cwd();
+const distPath = path.join(rootDir, 'dist');
 
-console.log('--- DIAGNÓSTICO DE CAMINHOS ---');
-console.log('__dirname atual:', __dirname);
-console.log('Caminho dist alvo:', distPath);
+console.log('--- DIAGNÓSTICO DE AMBIENTE RENDER ---');
+console.log('Diretório de trabalho (CWD):', rootDir);
+console.log('Caminho absoluto para dist:', distPath);
+
 if (fs.existsSync(distPath)) {
-  console.log('✅ Pasta dist encontrada com sucesso.');
+  console.log('✅ Pasta dist encontrada em:', distPath);
+  console.log('Conteúdo da pasta dist:', fs.readdirSync(distPath));
 } else {
-  console.error('❌ ERRO: Pasta dist NÃO ENCONTRADA no caminho:', distPath);
-  console.log('Conteúdo do diretório pai:', fs.readdirSync(path.join(__dirname, '..')));
+  console.error('❌ ERRO: Pasta dist NÃO ENCONTRADA!');
+  console.log('Listando arquivos na raiz para depuração:');
+  try {
+    const rootFiles = fs.readdirSync(rootDir);
+    console.log('Arquivos na raiz:', rootFiles);
+  } catch (e) {
+    console.error('Não foi possível listar a raiz:', e.message);
+  }
 }
 
 const { Pool } = pkg;
@@ -31,7 +42,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Servir arquivos estáticos
+// Servir arquivos estáticos da pasta dist
 app.use(express.static(distPath));
 
 // Configurações de Ambiente
@@ -39,7 +50,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET || 'glicoflow-secret-fallback-12345';
 const PORT = process.env.PORT || 3000;
 
-// Configuração SSL
+// Configuração SSL para PostgreSQL
 const needsSSL = DATABASE_URL && (DATABASE_URL.includes('render.com') || DATABASE_URL.includes('aws') || DATABASE_URL.includes('elephantsql'));
 const sslConfig = (process.env.NODE_ENV === 'production' || needsSSL) 
   ? { rejectUnauthorized: false } 
@@ -50,7 +61,7 @@ const pool = new Pool({
   ssl: sslConfig
 });
 
-pool.on('error', (err) => console.error('Erro no pool do Postgres:', err));
+pool.on('error', (err) => console.error('Erro crítico no pool do Postgres:', err));
 
 const initDb = async () => {
   try {
@@ -73,9 +84,9 @@ const initDb = async () => {
         created_at BIGINT NOT NULL
       );
     `);
-    console.log('Banco de dados verificado.');
+    console.log('✅ Banco de dados inicializado/verificado.');
   } catch (err) {
-    console.error('Erro ao inicializar banco:', err.message);
+    console.error('❌ Erro ao inicializar banco:', err.message);
   }
 };
 
@@ -90,7 +101,8 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Rotas da API
+// --- ROTAS DA API ---
+
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
   try {
@@ -163,18 +175,18 @@ app.get('/api/records', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', environment: process.env.NODE_ENV }));
 
-// Redirecionar todas as outras rotas para o index.html do React
+// Redirecionamento SPA (Single Page Application)
 app.get('*', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).send('Frontend não encontrado. Verifique o build.');
+    res.status(404).send(`Frontend não disponível em ${indexPath}. Verifique os logs de build.`);
   }
 });
 
 initDb().then(() => {
-  app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+  app.listen(PORT, () => console.log(`🚀 Servidor rodando em modo ${process.env.NODE_ENV} na porta ${PORT}`));
 });

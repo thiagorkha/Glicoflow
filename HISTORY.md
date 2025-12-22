@@ -7,33 +7,34 @@ Migrar a aplicação de uma planilha local/mock para um deploy real no **Render*
 
 ## Log de Conversas e Alterações
 
-### 3. Correção do Erro `ENOENT` (Pasta `dist` não encontrada)
-**Problema:** No deploy, o servidor iniciava mas falhava ao tentar servir o `index.html`, pois a pasta `dist` não existia ou o caminho estava incorreto.
-**Ações:**
-- Simplificação do comando de build no `package.json` para garantir a geração da pasta.
-- Adição de diagnóstico de caminhos no `server.js` para mostrar exatamente onde o servidor está procurando os arquivos.
-- Adição de verificação `fs.existsSync` para evitar crash silencioso.
+### 4. Resolução Definitiva do Erro `ENOENT /dist`
+**Problema:** O servidor falhava ao buscar a pasta `dist` mesmo após o build.
+**Causas prováveis:**
+- Uso de `__dirname` que aponta para a pasta `backend/`, enquanto a `dist` é gerada na raiz.
+- Configuração incorreta do "Root Directory" no painel do Render.
+
+**Correções:**
+- Refatorado `server.js` para usar `process.cwd()` (ancorado na raiz da execução).
+- Adicionado log de listagem de arquivos da raiz no startup para debug visual.
 
 ---
 
-## 🛠 Guia Definitivo de Deploy no Render
+## 🛠 Guia de Emergência - Erro de Pasta dist
 
-Se você está vendo erros de "file not found", verifique estas configurações no painel do Render:
+Se o deploy continuar falhando com "Pasta dist NÃO ENCONTRADA", verifique isto no painel do Render:
 
-### 1. Comandos de Build e Start
-No campo **Settings** do seu Web Service:
-- **Build Command:** `npm install && npm run build`
-- **Start Command:** `npm start` (ou `node backend/server.js`)
+### 1. Root Directory (Diretório Raiz)
+- **Onde:** Aba "Settings".
+- **Valor:** Deve estar **VAZIO**. 
+- **Erro Comum:** Se você colocar `backend` ou `src` aqui, o Render não encontrará o `package.json` principal e o build do Vite não funcionará corretamente.
 
-### 2. Variáveis de Ambiente (Aba Environment)
-- `NODE_ENV`: `production`
-- `DATABASE_URL`: Use a **Internal Database URL** do seu banco Render.
-- `JWT_SECRET`: Uma senha forte para os tokens.
+### 2. Build Command
+- **Valor Correto:** `npm install && npm run build`
+- Verifique se nos logs do Render aparece a mensagem `vite vX.X.X building for production...` e depois `✓ built in X.Xs`. Se isso não aparecer, o build falhou antes de chegar no servidor.
 
-### 3. Por que o erro `ENOENT` acontece?
-1. O comando `npm run build` não foi executado (o Render precisa dele para criar a pasta `dist`).
-2. O comando de build falhou (verifique os logs de build anteriores ao erro de runtime).
-3. O caminho relativo no `server.js` está errado (corrigido agora com logs de diagnóstico).
+### 3. Start Command
+- **Valor Correto:** `npm start`
+- Isso executará `node backend/server.js` a partir da raiz, garantindo que `process.cwd()` encontre a pasta `dist/` gerada pelo build.
 
 ---
 
