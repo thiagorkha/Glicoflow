@@ -7,38 +7,29 @@ Migrar a aplicação de uma planilha local/mock para um deploy real no **Render*
 
 ## Log de Conversas e Alterações
 
-### 4. Resolução Definitiva do Erro `ENOENT /dist`
-**Problema:** O servidor falhava ao buscar a pasta `dist` mesmo após o build.
-**Causas prováveis:**
-- Uso de `__dirname` que aponta para a pasta `backend/`, enquanto a `dist` é gerada na raiz.
-- Configuração incorreta do "Root Directory" no painel do Render.
-
-**Correções:**
-- Refatorado `server.js` para usar `process.cwd()` (ancorado na raiz da execução).
-- Adicionado log de listagem de arquivos da raiz no startup para debug visual.
+### 5. Correção do Erro `sh: 1: vite: not found`
+**Problema:** O comando `npm run build` falhava no Render com o erro "vite: not found".
+**Causa:** O Render, com `NODE_ENV=production`, não instala dependências de desenvolvimento (`devDependencies`). Como o Vite é necessário para gerar a pasta `dist` durante o build, ele precisa estar disponível.
+**Solução:** Movidas as dependências `vite`, `@vitejs/plugin-react` e `typescript` para a seção `dependencies` no `package.json`.
 
 ---
 
-## 🛠 Guia de Emergência - Erro de Pasta dist
+## 🛠 Guia de Deploy no Render (Checklist Final)
 
-Se o deploy continuar falhando com "Pasta dist NÃO ENCONTRADA", verifique isto no painel do Render:
+Se você encontrar erros no deploy, revise estes pontos:
 
-### 1. Root Directory (Diretório Raiz)
-- **Onde:** Aba "Settings".
-- **Valor:** Deve estar **VAZIO**. 
-- **Erro Comum:** Se você colocar `backend` ou `src` aqui, o Render não encontrará o `package.json` principal e o build do Vite não funcionará corretamente.
+### 1. Dependências de Build
+As ferramentas de build (Vite) agora estão nas dependências principais. Isso garante que o comando `npm run build` funcione mesmo quando o ambiente está configurado como `production`.
 
-### 2. Build Command
-- **Valor Correto:** `npm install && npm run build`
-- Verifique se nos logs do Render aparece a mensagem `vite vX.X.X building for production...` e depois `✓ built in X.Xs`. Se isso não aparecer, o build falhou antes de chegar no servidor.
+### 2. Configurações no Painel do Render (Aba Settings)
+- **Build Command:** `npm install && npm run build`
+- **Start Command:** `npm start`
+- **Root Directory:** Deixe em **BRANCO** (vazio).
 
-### 3. Start Command
-- **Valor Correto:** `npm start`
-- Isso executará `node backend/server.js` a partir da raiz, garantindo que `process.cwd()` encontre a pasta `dist/` gerada pelo build.
+### 3. Variáveis de Ambiente (Aba Environment)
+- `NODE_ENV`: `production`
+- `DATABASE_URL`: URL de conexão do seu PostgreSQL.
+- `JWT_SECRET`: Uma string aleatória para segurança.
 
----
-
-## Estrutura Atual do Backend (`server.js`)
-- **Autenticação:** JWT + BCryptJS.
-- **Persistência:** PostgreSQL (Pool de conexões).
-- **Frontend:** Estático servido pela pasta `/dist`, com redirecionamento Single Page Application (SPA).
+### 4. Diagnóstico de Pasta dist
+Se o servidor iniciar mas der erro de "index.html not found", observe os logs de inicialização. O `server.js` agora imprime o conteúdo da raiz do projeto para ajudar a localizar onde a pasta `dist` foi criada.
