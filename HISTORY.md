@@ -7,28 +7,37 @@ Migrar a aplicação de uma planilha local/mock para um deploy real no **Render*
 
 ## Log de Conversas e Alterações
 
-### 7. Otimização de Chunks (Vite Build)
-**Problema:** Aviso `Adjust chunk size limit` durante o deploy no Render.
-**Causa:** O bundle principal excedeu 500kb devido às dependências visuais (gráficos e ícones).
-**Solução:** Configurado o `vite.config.ts` para realizar *Code Splitting*. Agora, o React, o Recharts e o Lucide-React são gerados em arquivos `.js` separados, o que elimina o aviso e permite que o navegador baixe apenas o que mudou em futuros acessos.
+### 8. Resolução do Erro 200:{} e Refatoração de Rotas
+**Problema:** O frontend recebia status 200 mas um corpo JSON vazio `{}` durante o registro/login.
+**Soluções Aplicadas:**
+1.  **Logger de Backend:** Adicionado log de todas as requisições (`METHOD URL`) para identificar se as chamadas da API estão atingindo o código correto ou caindo no catch-all da SPA.
+2.  **Rota Faltante:** Implementada a rota `POST /api/auth/check-username` que o frontend chamava mas o backend ignorava.
+3.  **Limpeza do Frontend:** Removidos pacotes de backend do `index.html` (importmap) para evitar conflitos no navegador.
+4.  **Garantia de Resposta:** Todas as rotas de autenticação agora garantem o retorno de um objeto com `success: true/false`, `token` e `user` de forma explícita.
 
 ---
 
-## 🛠 Guia de Deploy no Render (Checklist Final)
+## 🛠 Checklist de Configuração no Render (VERIFIQUE ISSO AGORA)
 
-### 1. Dependências de Build
-As ferramentas de build (Vite) agora estão nas dependências principais para garantir funcionamento em `NODE_ENV=production`.
+### 1. Dashboard do Banco de Dados (PostgreSQL)
+- [ ] O status do banco é **"Available"** (Verde).
+- [ ] Copie a **"External Connection String"** (começa com `postgres://...`).
 
-### 2. Conectividade do Banco de Dados
-Verifique os logs do **Web Service**. Mensagens de sucesso: `✅ Conexão com PostgreSQL confirmada`.
+### 2. Dashboard do Web Service (GlicoFlow)
+Vá em **Settings -> Environment Variables** e verifique:
+- [ ] `DATABASE_URL`: Deve conter a string copiada do passo anterior.
+- [ ] `JWT_SECRET`: Deve ser uma frase longa e aleatória (ex: `minha-chave-secreta-muito-segura-2024`).
+- [ ] `NODE_ENV`: Deve estar definido como `production`.
 
-### 3. Código (Possíveis Falhas Silenciosas)
-O código agora evita falhas silenciosas:
-- **Check A:** Garante que o frontend está sendo servido da pasta correta através de logs de caminho absoluto.
-- **Check B:** Valida se o banco está respondendo a queries básicas no momento do boot.
-- **Check C:** Otimização de chunks para evitar avisos de build e melhorar performance.
+### 3. Comandos de Build/Start
+Vá em **Settings -> General**:
+- [ ] **Build Command**: `npm install && npm run build`
+- [ ] **Start Command**: `npm start`
+- [ ] **Root Directory**: Deixe em branco.
 
-### 4. Configurações no Painel do Render
-- **Build Command:** `npm install && npm run build`
-- **Start Command:** `npm start`
-- **Root Directory:** **VAZIO**.
+### 4. Depuração pelos Logs
+Se o erro `200:{}` persistir:
+1. Vá na aba **Logs** do seu Web Service no Render.
+2. Procure por linhas como `POST /api/auth/register`.
+3. Se você ver `GET /api/auth/register` (com GET em vez de POST) ou se não aparecer nada nos logs quando você clica no botão, o erro está na URL da API ou no navegador.
+4. Se o log mostrar `✅ Novo usuário registrado`, mas o frontend der erro, limpe o cache do seu navegador (LocalStorage).
