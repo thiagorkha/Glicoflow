@@ -1,43 +1,41 @@
 # Histórico do Projeto GlicoFlow
 
-## Objetivo Principal
-Migrar a aplicação de uma planilha local/mock para um deploy real no **Render** utilizando banco de dados **PostgreSQL**.
+## Log de Atualizações (Fase Final)
+
+### 9. Estabilização do Deploy e Banco de Dados
+**Problema:** Erro `Status 200: {}` no frontend.
+**Causa:** O servidor estava devolvendo o `index.html` (que tem status 200) para as rotas da API porque a ordem dos middlewares estava incorreta, ou o navegador tentava carregar bibliotecas de backend (express, pg) via importmap.
+**Solução:** 
+1. Limpeza total do `index.html`.
+2. Reordenação do `server.js` (API primeiro, Arquivos Estáticos depois).
+3. Adição de logs de entrada de dados no servidor.
 
 ---
 
-## Log de Conversas e Alterações
+## 🚀 Checklist Final para Deploy no Render
 
-### 8. Resolução do Erro 200:{} e Refatoração de Rotas
-**Problema:** O frontend recebia status 200 mas um corpo JSON vazio `{}` durante o registro/login.
-**Soluções Aplicadas:**
-1.  **Logger de Backend:** Adicionado log de todas as requisições (`METHOD URL`) para identificar se as chamadas da API estão atingindo o código correto ou caindo no catch-all da SPA.
-2.  **Rota Faltante:** Implementada a rota `POST /api/auth/check-username` que o frontend chamava mas o backend ignorava.
-3.  **Limpeza do Frontend:** Removidos pacotes de backend do `index.html` (importmap) para evitar conflitos no navegador.
-4.  **Garantia de Resposta:** Todas as rotas de autenticação agora garantem o retorno de um objeto com `success: true/false`, `token` e `user` de forma explícita.
+### Passo 1: O Banco de Dados (PostgreSQL)
+1. No painel do Render, vá no seu banco de dados.
+2. Em **Connections**, copie a **External Database URL**.
+3. Verifique se em **Access Control** o IP `0.0.0.0/0` está permitido (ou se o Render configurou automaticamente).
+
+### Passo 2: O Web Service (Aplicação)
+Vá em **Environment** e confirme as chaves:
+- `DATABASE_URL`: A URL que você copiou do banco.
+- `JWT_SECRET`: Qualquer senha forte (ex: `GlicoFlow_Secure_2024!`).
+- `NODE_ENV`: `production`.
+
+### Passo 3: Limpeza Local
+O erro `200: {}` às vezes fica "preso" no cache do navegador se uma versão antiga tentou rodar.
+1. No seu navegador, aperte `F12`.
+2. Vá em **Application** -> **Local Storage**.
+3. Clique com o botão direito no endereço do seu site e selecione **Clear**.
+4. Recarregue a página (`Ctrl + F5`).
+
+### Passo 4: Verificação das Tabelas
+O código atual cria as tabelas sozinho. Se quiser confirmar se funcionou, olhe os logs do Render. Você deve ver:
+`✅ Banco de dados conectado: ...`
+`✅ Tabelas verificadas/criadas com sucesso.`
 
 ---
-
-## 🛠 Checklist de Configuração no Render (VERIFIQUE ISSO AGORA)
-
-### 1. Dashboard do Banco de Dados (PostgreSQL)
-- [ ] O status do banco é **"Available"** (Verde).
-- [ ] Copie a **"External Connection String"** (começa com `postgres://...`).
-
-### 2. Dashboard do Web Service (GlicoFlow)
-Vá em **Settings -> Environment Variables** e verifique:
-- [ ] `DATABASE_URL`: Deve conter a string copiada do passo anterior.
-- [ ] `JWT_SECRET`: Deve ser uma frase longa e aleatória (ex: `minha-chave-secreta-muito-segura-2024`).
-- [ ] `NODE_ENV`: Deve estar definido como `production`.
-
-### 3. Comandos de Build/Start
-Vá em **Settings -> General**:
-- [ ] **Build Command**: `npm install && npm run build`
-- [ ] **Start Command**: `npm start`
-- [ ] **Root Directory**: Deixe em branco.
-
-### 4. Depuração pelos Logs
-Se o erro `200:{}` persistir:
-1. Vá na aba **Logs** do seu Web Service no Render.
-2. Procure por linhas como `POST /api/auth/register`.
-3. Se você ver `GET /api/auth/register` (com GET em vez de POST) ou se não aparecer nada nos logs quando você clica no botão, o erro está na URL da API ou no navegador.
-4. Se o log mostrar `✅ Novo usuário registrado`, mas o frontend der erro, limpe o cache do seu navegador (LocalStorage).
+*Status: Aguardando verificação final após novo deploy.*
