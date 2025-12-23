@@ -5,8 +5,7 @@ import {
   where, 
   getDocs, 
   orderBy, 
-  limit,
-  Timestamp 
+  limit 
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { GlucoseRecord } from '../types';
@@ -20,12 +19,13 @@ export const addGlucoseRecord = async (
   time: string
 ): Promise<GlucoseRecord> => {
   try {
+    const timestamp = Date.now();
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       userId,
       value,
       date,
       time,
-      createdAt: Date.now()
+      createdAt: timestamp
     });
 
     return {
@@ -34,7 +34,7 @@ export const addGlucoseRecord = async (
       value,
       date,
       time,
-      createdAt: Date.now()
+      createdAt: timestamp
     };
   } catch (error) {
     console.error("Erro ao salvar no Firestore:", error);
@@ -48,11 +48,12 @@ export const getUserHistory = async (
   endDate?: string
 ): Promise<GlucoseRecord[]> => {
   try {
-    let q = query(
+    // Usamos apenas createdAt para ordenação. 
+    // Isso ainda exige um índice composto (userId ASC, createdAt DESC).
+    const q = query(
       collection(db, COLLECTION_NAME),
       where("userId", "==", userId),
-      orderBy("date", "desc"),
-      orderBy("time", "desc")
+      orderBy("createdAt", "desc")
     );
 
     const querySnapshot = await getDocs(q);
@@ -66,14 +67,17 @@ export const getUserHistory = async (
       } as GlucoseRecord);
     });
 
-    // Filtro manual de data (opcional, Firestore prefere filtros no servidor mas exige índices)
+    // Filtro de data feito no cliente para simplificar os índices do Firebase
     if (startDate && endDate) {
       return records.filter(r => r.date >= startDate && r.date <= endDate);
     }
 
     return records;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao buscar histórico no Firestore:", error);
+    if (error.message && error.message.includes('index')) {
+      console.warn("⚠️ AÇÃO NECESSÁRIA: Clique no link acima para criar o índice no Firebase Console.");
+    }
     return [];
   }
 };
@@ -85,7 +89,7 @@ export const getStats = async (userId: string) => {
 
   const total = records.reduce((acc, curr) => acc + curr.value, 0);
   const avg = Math.round(total / records.length);
-  const last = records[0].value; // Já vem ordenado do Firebase
+  const last = records[0].value; 
 
   return { avg, count: records.length, last };
 };
