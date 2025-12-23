@@ -37,8 +37,15 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
   return (
     <div className="flex-1 flex flex-col justify-center p-8 bg-white">
       <div className="text-center mb-10">
-        <div className="w-24 h-24 mx-auto mb-4 overflow-hidden rounded-3xl shadow-lg border-2 border-blue-50">
-          <img src="logo.png" alt="GlicoFlow Logo" className="w-full h-full object-cover" />
+        <div className="w-24 h-24 mx-auto mb-4 overflow-hidden rounded-3xl shadow-lg border-2 border-blue-50 bg-blue-600 flex items-center justify-center">
+          <img 
+            src="/logo.png" 
+            alt="GlicoFlow Logo" 
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=GF&background=2563eb&color=fff';
+            }}
+          />
         </div>
         <h2 className="text-2xl font-bold text-gray-800">GlicoFlow</h2>
         <p className="text-gray-500 text-sm mt-1">Sua saúde sob controle</p>

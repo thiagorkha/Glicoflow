@@ -53,8 +53,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
           <h2 className="text-xl font-semibold text-gray-800">Olá, {user.username}!</h2>
           <p className="text-gray-500 text-sm">Resumo da sua glicemia</p>
         </div>
-        <div className="w-12 h-12 rounded-xl overflow-hidden shadow-sm border border-gray-100">
-          <img src="logo.png" alt="Logo" className="w-full h-full object-cover" />
+        <div className="w-12 h-12 rounded-xl overflow-hidden shadow-sm border border-gray-100 bg-blue-600">
+          <img 
+            src="/logo.png" 
+            alt="Logo" 
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=GF&background=2563eb&color=fff';
+            }}
+          />
         </div>
       </div>
 
