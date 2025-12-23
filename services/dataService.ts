@@ -1,25 +1,17 @@
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  where, 
+  getDocs, 
+  orderBy, 
+  limit,
+  Timestamp 
+} from 'firebase/firestore';
+import { db } from './firebase';
 import { GlucoseRecord } from '../types';
 
-// O valor correto é '/api' para que o proxy do Vite ou o servidor Express direcione corretamente
-const API_BASE_URL = '/api'; 
-
-const getHeaders = () => {
-  const token = localStorage.getItem('glicoflow_token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-};
-
-const safeParseJSON = async (response: Response) => {
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch (e) {
-    console.error('Resposta não-JSON recebida:', text);
-    throw new Error(`Erro do servidor: Resposta inválida (${response.status})`);
-  }
-};
+const COLLECTION_NAME = 'glucose_records';
 
 export const addGlucoseRecord = async (
   userId: string,
@@ -27,18 +19,27 @@ export const addGlucoseRecord = async (
   date: string,
   time: string
 ): Promise<GlucoseRecord> => {
-  const response = await fetch(`${API_BASE_URL}/records`, {
-    method: 'POST',
-    headers: getHeaders(),
-    body: JSON.stringify({ userId, value, date, time }),
-  });
+  try {
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), {
+      userId,
+      value,
+      date,
+      time,
+      createdAt: Date.now()
+    });
 
-  if (!response.ok) {
-    const errorData = await safeParseJSON(response).catch(() => ({ message: 'Erro desconhecido' }));
-    throw new Error(errorData.message || 'Falha ao salvar registro');
+    return {
+      id: docRef.id,
+      userId,
+      value,
+      date,
+      time,
+      createdAt: Date.now()
+    };
+  } catch (error) {
+    console.error("Erro ao salvar no Firestore:", error);
+    throw new Error('Falha ao salvar registro');
   }
-
-  return safeParseJSON(response);
 };
 
 export const getUserHistory = async (
@@ -46,24 +47,33 @@ export const getUserHistory = async (
   startDate?: string,
   endDate?: string
 ): Promise<GlucoseRecord[]> => {
-  const params = new URLSearchParams({ userId });
-  if (startDate) params.append('startDate', startDate);
-  if (endDate) params.append('endDate', endDate);
-
   try {
-    const response = await fetch(`${API_BASE_URL}/records?${params.toString()}`, {
-      method: 'GET',
-      headers: getHeaders(),
+    let q = query(
+      collection(db, COLLECTION_NAME),
+      where("userId", "==", userId),
+      orderBy("date", "desc"),
+      orderBy("time", "desc")
+    );
+
+    const querySnapshot = await getDocs(q);
+    const records: GlucoseRecord[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      records.push({
+        id: doc.id,
+        ...data
+      } as GlucoseRecord);
     });
 
-    if (!response.ok) {
-      console.error("Falha ao buscar histórico:", response.status);
-      return [];
+    // Filtro manual de data (opcional, Firestore prefere filtros no servidor mas exige índices)
+    if (startDate && endDate) {
+      return records.filter(r => r.date >= startDate && r.date <= endDate);
     }
 
-    return await safeParseJSON(response);
+    return records;
   } catch (error) {
-    console.error("Erro de conexão no histórico:", error);
+    console.error("Erro ao buscar histórico no Firestore:", error);
     return [];
   }
 };
@@ -75,15 +85,7 @@ export const getStats = async (userId: string) => {
 
   const total = records.reduce((acc, curr) => acc + curr.value, 0);
   const avg = Math.round(total / records.length);
-  
-  // Ordena por data/hora decrescente para pegar o último registro
-  const sorted = [...records].sort((a, b) => {
-    const dateA = new Date(`${a.date}T${a.time}`);
-    const dateB = new Date(`${b.date}T${b.time}`);
-    return dateB.getTime() - dateA.getTime();
-  });
-
-  const last = sorted[0].value;
+  const last = records[0].value; // Já vem ordenado do Firebase
 
   return { avg, count: records.length, last };
 };

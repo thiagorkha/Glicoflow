@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { User, ViewState } from '../types';
 import { loginUser } from '../services/authService';
-import { Loader2, User as UserIcon, Lock, CheckSquare, Square } from 'lucide-react';
+import { Loader2, User as UserIcon, Lock, CheckSquare, Square, Mail } from 'lucide-react';
 
 interface LoginFormProps {
   onLoginSuccess: (user: User, remember: boolean) => void;
@@ -9,7 +9,7 @@ interface LoginFormProps {
 }
 
 const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -21,7 +21,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
     setLoading(true);
 
     try {
-      const result = await loginUser(username, password);
+      const result = await loginUser(email, password);
       if (result.success && result.user) {
         onLoginSuccess(result.user, rememberMe);
       } else {
@@ -38,10 +38,10 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
     <div className="flex-1 flex flex-col justify-center p-8 bg-white">
       <div className="text-center mb-8">
         <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
-          <UserIcon className="w-8 h-8" />
+          <Activity className="w-8 h-8" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-800">Bem-vindo de volta</h2>
-        <p className="text-gray-500 text-sm mt-1">Acesse seus dados de glicemia</p>
+        <h2 className="text-2xl font-bold text-gray-800">GlicoFlow</h2>
+        <p className="text-gray-500 text-sm mt-1">Acesse com seu e-mail e senha</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -52,16 +52,16 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
         )}
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">Usuário</label>
+          <label className="text-sm font-medium text-gray-700">E-mail</label>
           <div className="relative">
-            <UserIcon className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+            <Mail className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
             <input
-              type="text"
+              type="email"
               required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
-              placeholder="Seu nome de usuário"
+              placeholder="seu@email.com"
             />
           </div>
         </div>
@@ -79,18 +79,6 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
               placeholder="Sua senha"
             />
           </div>
-        </div>
-
-        <div 
-          className="flex items-center gap-2 cursor-pointer group"
-          onClick={() => setRememberMe(!rememberMe)}
-        >
-          {rememberMe ? (
-            <CheckSquare className="w-5 h-5 text-blue-600" />
-          ) : (
-            <Square className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
-          )}
-          <span className="text-sm text-gray-600 select-none">Manter conectado neste dispositivo</span>
         </div>
 
         <button
@@ -117,4 +105,5 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
   );
 };
 
+import { Activity } from 'lucide-react';
 export default LoginForm;

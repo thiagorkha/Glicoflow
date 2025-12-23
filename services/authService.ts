@@ -1,115 +1,72 @@
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  updateProfile
+} from 'firebase/auth';
+import { auth } from './firebase';
 import { User, AuthResponse } from '../types';
-
-const API_BASE_URL = '/api'; 
-
-const getHeaders = () => {
-  const token = localStorage.getItem('glicoflow_token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-};
-
-const parseJSON = async (response: Response) => {
-  const text = await response.text();
-  console.log(`[AuthService] Raw Response (${response.status}):`, text); // Debug essencial
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch (e) {
-    console.error('Failed to parse JSON response. Raw text:', text);
-    return { message: `Erro do servidor (Resposta inválida): ${text.substring(0, 100)}` };
-  }
-};
 
 export const registerUser = async (username: string, email: string, password: string): Promise<AuthResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password }),
-    });
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(userCredential.user, { displayName: username });
     
-    const data = await parseJSON(response);
+    const user: User = {
+      id: userCredential.user.uid,
+      username: username,
+      email: email
+    };
     
-    if (response.ok && data.token) {
-      localStorage.setItem('glicoflow_token', data.token);
-      return data; 
-    } else {
-      console.warn("Register Failed. Status:", response.status);
-      console.warn("Response Body:", data);
-      
-      const jsonStr = JSON.stringify(data);
-      const errorMsg = data.message || data.error || `Erro (${response.status}): ${jsonStr}`;
-      return { success: false, message: errorMsg };
-    }
-  } catch (error) {
-    console.error("Network/System error:", error);
-    return { success: false, message: 'Não foi possível conectar ao servidor (Erro de Rede).' };
+    return { success: true, user };
+  } catch (error: any) {
+    let message = 'Falha no cadastro.';
+    if (error.code === 'auth/email-already-in-use') message = 'E-mail já está em uso.';
+    if (error.code === 'auth/weak-password') message = 'Senha muito fraca.';
+    return { success: false, message };
   }
 };
 
-export const loginUser = async (username: string, password: string): Promise<AuthResponse> => {
+export const loginUser = async (emailOrUsername: string, password: string): Promise<AuthResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-
-    const data = await parseJSON(response);
-
-    if (response.ok && data.token) {
-      localStorage.setItem('glicoflow_token', data.token);
-      return { success: true, user: data.user, token: data.token };
-    }
-
-    return { success: false, message: data.message || data.error || 'Usuário ou senha inválidos' };
-  } catch (error) {
-    console.error(error);
-    return { success: false, message: 'Erro de conexão ao tentar entrar.' };
+    // Nota: Firebase usa e-mail. Se o usuário digitar o username, pediremos e-mail no futuro.
+    // Para simplificar, assumimos que o campo "Usuário" no login aceita o e-mail cadastrado.
+    const userCredential = await signInWithEmailAndPassword(auth, emailOrUsername, password);
+    
+    const user: User = {
+      id: userCredential.user.uid,
+      username: userCredential.user.displayName || 'Usuário',
+      email: userCredential.user.email || ''
+    };
+    
+    return { success: true, user };
+  } catch (error: any) {
+    return { success: false, message: 'E-mail ou senha inválidos.' };
   }
 };
 
 export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/check-username`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username }),
-    });
-    
-    if (!response.ok) return true;
-    
-    const data = await parseJSON(response);
-    return data.available;
-  } catch (error) {
-    console.error("Check username failed", error);
-    return true;
-  }
+  // No Firebase Auth básico não há check de username sem Firestore, assumimos true
+  return true;
 };
 
 export const checkAutoLogin = async (): Promise<User | null> => {
-  const token = localStorage.getItem('glicoflow_token');
-  if (!token) return null;
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
-      method: 'GET',
-      headers: getHeaders(),
+  return new Promise((resolve) => {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        resolve({
+          id: user.uid,
+          username: user.displayName || 'Usuário',
+          email: user.email || ''
+        });
+      } else {
+        resolve(null);
+      }
     });
-
-    if (response.ok) {
-      const data = await parseJSON(response);
-      return data.user;
-    } else {
-      localStorage.removeItem('glicoflow_token');
-      return null;
-    }
-  } catch (error) {
-    return null;
-  }
+  });
 };
 
-export const logoutUser = () => {
-  localStorage.removeItem('glicoflow_token');
+export const logoutUser = async () => {
+  await signOut(auth);
 };
