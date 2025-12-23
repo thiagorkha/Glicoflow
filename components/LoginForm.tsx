@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User, ViewState } from '../types';
 import { loginUser } from '../services/authService';
-import { Loader2, User as UserIcon, Lock, CheckSquare, Square, Mail } from 'lucide-react';
+import { Loader2, Lock, Mail } from 'lucide-react';
 
 interface LoginFormProps {
   onLoginSuccess: (user: User, remember: boolean) => void;
@@ -36,12 +36,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
 
   return (
     <div className="flex-1 flex flex-col justify-center p-8 bg-white">
-      <div className="text-center mb-8">
-        <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
-          <Activity className="w-8 h-8" />
+      <div className="text-center mb-10">
+        <div className="w-24 h-24 mx-auto mb-4 overflow-hidden rounded-3xl shadow-lg border-2 border-blue-50">
+          <img src="logo.png" alt="GlicoFlow Logo" className="w-full h-full object-cover" />
         </div>
         <h2 className="text-2xl font-bold text-gray-800">GlicoFlow</h2>
-        <p className="text-gray-500 text-sm mt-1">Acesse com seu e-mail e senha</p>
+        <p className="text-gray-500 text-sm mt-1">Sua saúde sob controle</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -105,5 +105,4 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onNavigate }) => 
   );
 };
 
-import { Activity } from 'lucide-react';
 export default LoginForm;

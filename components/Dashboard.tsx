@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { User, ViewState } from '../types';
-import { getStats } from '../services/dataService';
-import { PlusCircle, Search, Activity, Calendar } from 'lucide-react';
+import { getStats, getUserHistory } from '../services/dataService';
+import { PlusCircle, Search, Activity, Smartphone } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { getUserHistory } from '../services/dataService';
 
 interface DashboardProps {
   user: User;
@@ -13,30 +12,67 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
   const [stats, setStats] = useState({ avg: 0, count: 0, last: 0 });
   const [chartData, setChartData] = useState<any[]>([]);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      // Fetch stats
       const s = await getStats(user.id);
       setStats(s);
-
-      // Fetch recent history for chart (last 7 items reversed for chart L to R)
       const h = await getUserHistory(user.id);
       const recent = h.slice(0, 10).reverse().map(r => ({
-        name: r.date.split('/').slice(0, 2).join('/'), // Short date
+        name: r.date.split('/').slice(0, 2).join('/'),
         value: r.value
       }));
       setChartData(recent);
     };
     fetchData();
+
+    // Listener para o evento de instalação (Chrome/Android)
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
   }, [user.id]);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col p-6 gap-6">
-      <div className="text-left">
-        <h2 className="text-xl font-semibold text-gray-800">Olá, {user.username}!</h2>
-        <p className="text-gray-500 text-sm">Resumo da sua glicemia</p>
+      <div className="flex justify-between items-start">
+        <div className="text-left">
+          <h2 className="text-xl font-semibold text-gray-800">Olá, {user.username}!</h2>
+          <p className="text-gray-500 text-sm">Resumo da sua glicemia</p>
+        </div>
+        <div className="w-12 h-12 rounded-xl overflow-hidden shadow-sm border border-gray-100">
+          <img src="logo.png" alt="Logo" className="w-full h-full object-cover" />
+        </div>
       </div>
+
+      {/* PWA Install Notification */}
+      {deferredPrompt && (
+        <div className="bg-blue-600 p-4 rounded-2xl flex items-center justify-between text-white shadow-lg animate-bounce">
+          <div className="flex items-center gap-3">
+            <Smartphone className="w-5 h-5" />
+            <span className="text-sm font-bold">Instalar GlicoFlow?</span>
+          </div>
+          <button 
+            onClick={handleInstallClick}
+            className="bg-white text-blue-600 px-4 py-1 rounded-lg text-xs font-black uppercase"
+          >
+            Instalar
+          </button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 gap-4">
